@@ -1,0 +1,23 @@
+# dependencias
+node_modules/
+
+# build
+dist/
+
+# entorno
+.env
+.env.local
+*.local
+
+# claves (la pública se inyecta/copia en despliegue, no se commitea)
+*.pem
+certs/
+
+# logs
+*.log
+npm-debug.log*
+
+# editor / SO
+.DS_Store
+.idea/
+.vscode/

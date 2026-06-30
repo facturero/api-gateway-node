@@ -1,0 +1,105 @@
+name: CI/CD Deploy to K3s
+
+on:
+  push:
+    branches: [ "master" ]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Set lowercase image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}/api-gateway-node" >> $GITHUB_ENV
+
+      - name: Login GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${REGISTRY} -u ${{ github.actor }} --password-stdin
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          push: true
+
+  deploy:
+    needs: build
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set lowercase image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}/api-gateway-node" >> $GITHUB_ENV
+
+      - name: Install sops & age (ARM64)
+        run: |
+          if ! command -v sops &> /dev/null; then
+            wget -O /tmp/sops https://github.com/getsops/sops/releases/latest/download/sops-linux-arm64
+            sudo mv /tmp/sops /usr/local/bin/sops
+            sudo chmod +x /usr/local/bin/sops
+          fi
+          if ! command -v age &> /dev/null; then
+            AGE_VERSION=$(curl -sI https://github.com/FiloSottile/age/releases/latest | grep -i location | grep -oP 'v\K[0-9.]+')
+            wget -O /tmp/age.tar.gz "https://github.com/FiloSottile/age/releases/latest/download/age-v${AGE_VERSION}-linux-arm64.tar.gz"
+            sudo tar -xzf /tmp/age.tar.gz -C /usr/local/bin --strip-components=1 age/age age/age-keygen
+            rm -f /tmp/age.tar.gz
+          fi
+
+      - name: Set age decryption key
+        run: |
+          echo "SOPS_AGE_KEY<<EOF" >> $GITHUB_ENV
+          echo "${{ secrets.SOPS_AGE_KEY }}" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Decrypt secrets and apply to K3s
+        run: |
+          sops -d --input-type dotenv --output-type dotenv config/secrets.production.enc > /tmp/.env
+          source /tmp/.env
+          rm -f /tmp/.env
+          kubectl create secret generic gateway-jwt \
+            --from-literal=public-key="$JWT_PUBLIC_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Update image and deploy
+        run: |
+          export REGISTRY=${REGISTRY}
+          export IMAGE_NAME=${IMAGE_NAME}
+          export IMAGE_TAG=${{ github.sha }}
+          envsubst < k8s/deployment.yaml | kubectl apply -f -
+          kubectl apply -f k8s/service.yaml
+          kubectl rollout status deployment api-gateway-node

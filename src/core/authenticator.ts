@@ -11,11 +11,20 @@ export class JwtAuthenticator implements Authenticator {
   private publicKeyPem: string;
   private issuer: string;
   private audience: string;
+  private keyPromise?: ReturnType<typeof importSPKI>;
 
   constructor(opts: JwtAuthenticatorOptions) {
     this.publicKeyPem = opts.publicKey;
     this.issuer = opts.issuer;
     this.audience = opts.audience;
+  }
+
+  /** Importa la clave pública una sola vez y la reutiliza (hot path). */
+  private getPublicKey(): ReturnType<typeof importSPKI> {
+    if (!this.keyPromise) {
+      this.keyPromise = importSPKI(this.publicKeyPem, 'RS256');
+    }
+    return this.keyPromise;
   }
 
   async authenticate(getHeader: GetHeader): Promise<AuthResult> {
@@ -27,7 +36,7 @@ export class JwtAuthenticator implements Authenticator {
     const token = authHeader.slice(7);
 
     try {
-      const publicKey = await importSPKI(this.publicKeyPem, 'RS256');
+      const publicKey = await this.getPublicKey();
       const { payload } = await jwtVerify(token, publicKey, {
         issuer: this.issuer,
         audience: this.audience,

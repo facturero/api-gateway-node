@@ -36,12 +36,16 @@ export async function proxyRequest(
     return c.json(errorBody('SERVICE_NOT_FOUND', `Servicio '${rule.service}' no configurado`), 500);
   }
 
-  let targetPath = c.req.path;
+  const incomingUrl = new URL(c.req.url);
+  let targetPath = incomingUrl.pathname;
   if (rule.stripPrefix) {
     targetPath = targetPath.replace(rule.stripPrefix, '') || '/';
   }
 
-  const targetUrl = new URL(targetPath, service.url).toString();
+  // Preservar el query string al reenviar.
+  const targetUrl = new URL(targetPath, service.url);
+  targetUrl.search = incomingUrl.search;
+  const targetUrlStr = targetUrl.toString();
 
   const downstreamHeaders = new Headers(c.req.raw.headers);
 
@@ -59,12 +63,18 @@ export async function proxyRequest(
 
   downstreamHeaders.set('X-Request-Id', requestId);
 
-  const body = c.req.method !== 'GET' && c.req.method !== 'HEAD' ? c.req.raw.body : undefined;
-  const downstreamReq = new Request(targetUrl, {
+  // Reenviar el body como stream requiere duplex 'half' en undici (fetch de Node).
+  const hasBody = c.req.method !== 'GET' && c.req.method !== 'HEAD';
+  const body = hasBody ? c.req.raw.body : null;
+  const init: RequestInit & { duplex?: 'half' } = {
     method: c.req.method,
     headers: downstreamHeaders,
-    body,
-  });
+  };
+  if (body) {
+    init.body = body;
+    init.duplex = 'half';
+  }
+  const downstreamReq = new Request(targetUrlStr, init);
 
   try {
     const response = await fetch(downstreamReq);

@@ -39,6 +39,10 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'POST', path: '/auth/logout', service: 'auth-service', public: true },
       { method: 'ANY', path: '/auth/*', service: 'auth-service', public: false },
 
+      { method: 'ANY', path: '/users/*', service: 'auth-service' },
+      { method: 'ANY', path: '/roles/*', service: 'auth-service' },
+      { method: 'GET', path: '/permissions', service: 'auth-service' },
+
       { method: 'ANY', path: '/organizations/*', service: 'org-service', stripPrefix: '' },
       { method: 'ANY', path: '/establishments/*', service: 'org-service', stripPrefix: '' },
 

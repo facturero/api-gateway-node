@@ -2,6 +2,9 @@ import type { Context } from 'hono';
 import type { RouteRule, ServiceConfig } from './types';
 import { errorBody } from './errors';
 
+// eslint-disable-next-line no-console
+const log = console.error.bind(console, '[proxy]');
+
 const HOP_BY_HOP_HEADERS = [
   'connection',
   'keep-alive',
@@ -66,14 +69,20 @@ export async function proxyRequest(
   // Reenviar el body como stream requiere duplex 'half' en undici (fetch de Node).
   const hasBody = c.req.method !== 'GET' && c.req.method !== 'HEAD';
   const body = hasBody ? c.req.raw.body : null;
-  const init: RequestInit & { duplex?: 'half' } = {
+  const init: RequestInit & { duplex?: 'half'; redirect?: 'manual' } = {
     method: c.req.method,
     headers: downstreamHeaders,
+    redirect: 'manual',
   };
   if (body) {
     init.body = body;
     init.duplex = 'half';
+    downstreamHeaders.delete('Content-Length');
   }
+
+  // undici (Node.js fetch) no soporta ciertos headers del cliente original
+  downstreamHeaders.delete('expect');
+
   const downstreamReq = new Request(targetUrlStr, init);
 
   try {
@@ -83,7 +92,8 @@ export async function proxyRequest(
       statusText: response.statusText,
       headers: sanitizeResponseHeaders(response.headers),
     });
-  } catch {
+  } catch (err) {
+    log('Proxy error:', err);
     return c.json(
       errorBody('DOWNSTREAM_ERROR', 'Error al conectar con el servicio downstream'),
       502,

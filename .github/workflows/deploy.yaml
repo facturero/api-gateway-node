@@ -69,7 +69,8 @@ jobs:
       - name: Install sops & age (AMD64)
         run: |
           if ! command -v sops &> /dev/null; then
-            wget -O /tmp/sops https://github.com/getsops/sops/releases/latest/download/sops-linux-amd64
+            SOPS_VERSION=$(curl -sI https://github.com/getsops/sops/releases/latest | grep -i location | grep -oP 'v\K[0-9.]+')
+            wget -O /tmp/sops "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64"
             sudo mv /tmp/sops /usr/local/bin/sops
             sudo chmod +x /usr/local/bin/sops
           fi

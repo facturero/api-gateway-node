@@ -13,6 +13,7 @@ const envSchema = z.object({
   AUTH_SERVICE_URL: z.string().url(),
   ORG_SERVICE_URL: z.string().url().optional(),
   CUSTOMER_SERVICE_URL: z.string().url().optional(),
+  PRODUCT_SERVICE_URL: z.string().url().optional(),
   TAX_SERVICE_URL: z.string().url().optional(),
   DOCUMENT_SERVICE_URL: z.string().url().optional(),
 

@@ -19,6 +19,7 @@ export function buildGatewayConfig(): GatewayConfig {
 
   if (env.ORG_SERVICE_URL) services.push({ name: 'org-service', url: env.ORG_SERVICE_URL });
   if (env.CUSTOMER_SERVICE_URL) services.push({ name: 'customer-service', url: env.CUSTOMER_SERVICE_URL });
+  if (env.PRODUCT_SERVICE_URL) services.push({ name: 'product-service', url: env.PRODUCT_SERVICE_URL });
   if (env.TAX_SERVICE_URL) services.push({ name: 'tax-service', url: env.TAX_SERVICE_URL });
   if (env.DOCUMENT_SERVICE_URL) services.push({ name: 'document-service', url: env.DOCUMENT_SERVICE_URL });
 
@@ -29,6 +30,7 @@ export function buildGatewayConfig(): GatewayConfig {
       { claim: 'email', header: 'X-User-Email' },
       { claim: 'org_id', header: 'X-Organization-Id' },
       { claim: 'country_code', header: 'X-Country-Code' },
+      { claim: 'permissions', header: 'X-Permissions' },
     ],
     services,
     routes: [
@@ -37,6 +39,7 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'POST', path: '/auth/google', service: 'auth-service', public: true },
       { method: 'POST', path: '/auth/refresh', service: 'auth-service', public: true },
       { method: 'POST', path: '/auth/logout', service: 'auth-service', public: true },
+      { method: 'POST', path: '/auth/accept-invite', service: 'auth-service', public: true },
       { method: 'ANY', path: '/auth/*', service: 'auth-service', public: false },
 
       { method: 'ANY', path: '/users/*', service: 'auth-service' },
@@ -51,6 +54,11 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'ANY', path: '/addresses/*', service: 'customer-service', stripPrefix: '' },
       { method: 'ANY', path: '/tags/*', service: 'customer-service', stripPrefix: '' },
       { method: 'ANY', path: '/identification-types/*', service: 'customer-service', stripPrefix: '' },
+
+      { method: 'ANY', path: '/products/*', service: 'product-service', stripPrefix: '' },
+      { method: 'ANY', path: '/categories/*', service: 'product-service', stripPrefix: '' },
+      { method: 'ANY', path: '/units/*', service: 'product-service', stripPrefix: '' },
+      { method: 'ANY', path: '/tax-rates/*', service: 'product-service', stripPrefix: '' },
 
       { method: 'ANY', path: '/countries/*', service: 'tax-service', stripPrefix: '' },
 

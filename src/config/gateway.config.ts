@@ -62,6 +62,7 @@ export function buildGatewayConfig(): GatewayConfig {
 
       { method: 'ANY', path: '/countries/*', service: 'tax-service', stripPrefix: '' },
 
+      { method: 'GET', path: '/files/:id/download', service: 'document-service', stripPrefix: '', public: true },
       { method: 'ANY', path: '/files/*', service: 'document-service', stripPrefix: '' },
     ],
     cors: { origin: env.CORS_ORIGIN },

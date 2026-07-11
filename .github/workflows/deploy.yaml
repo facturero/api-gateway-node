@@ -81,23 +81,52 @@ jobs:
             rm -f /tmp/age.tar.gz
           fi
 
-      - name: Set age decryption key
+      - name: Setup age decryption key
         run: |
-          echo "SOPS_AGE_KEY<<EOF" >> $GITHUB_ENV
-          echo "${{ secrets.SOPS_AGE_KEY }}" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          set -e
+          mkdir -p ~/.config/sops/age
+          echo "${{ secrets.SOPS_AGE_KEY }}" > ~/.config/sops/age/keys.txt
+          chmod 600 ~/.config/sops/age/keys.txt
+          # Verifica el formato antes de continuar
+          if ! grep -q 'AGE-SECRET-KEY' ~/.config/sops/age/keys.txt; then
+            echo "ERROR: el secret SOPS_AGE_KEY no tiene formato de clave age válida" >&2
+            exit 1
+          fi
 
-      - name: Decrypt secrets and apply to K3s
+      - name: Decrypt secrets and update JWT secret
         run: |
-          sops -d --input-type dotenv --output-type dotenv config/secrets.production.enc > /tmp/.env
+          set -e
+          sops --decrypt --input-type dotenv --output-type dotenv config/secrets.production.enc > /tmp/.env
+
+          # Sanity check: si el archivo resultante aún tiene contenido ENC[...],
+          # sops no desencriptó y estamos por aplicar basura a k8s.
+          if grep -q '^ENC\[' /tmp/.env; then
+            echo "ERROR: /tmp/.env aún contiene ENC[...] tras 'sops -d'. Abortando." >&2
+            rm -f /tmp/.env
+            exit 1
+          fi
+          if ! grep -q '^JWT_PUBLIC_KEY=' /tmp/.env; then
+            echo "ERROR: /tmp/.env no tiene JWT_PUBLIC_KEY tras desencriptar." >&2
+            rm -f /tmp/.env
+            exit 1
+          fi
+
+          # Cargar las vars al ambiente del shell
+          set -a
           source /tmp/.env
-          rm -f /tmp/.env
+          set +a
+
+          # Crear/actualizar el secret del gateway con la clave pública
           kubectl create secret generic gateway-jwt \
             --from-literal=public-key="$JWT_PUBLIC_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
 
+          # Limpieza
+          rm -f /tmp/.env
+
       - name: Update image and deploy
         run: |
+          set -e
           export REGISTRY=${REGISTRY}
           export IMAGE_NAME=${IMAGE_NAME}
           export IMAGE_TAG=${{ github.sha }}

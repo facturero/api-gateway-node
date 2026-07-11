@@ -1,2 +1,7 @@
+# SOPS solo cifra secretos (dotenv en config/). Los manifiestos de Kubernetes
+# (k8s/*.yaml) NO se cifran: son estructura pública (nombres, puertos, imagen).
+# Los secretos reales se aplican por separado con `kubectl create secret ...`
+# después de desencriptar el .env.
 creation_rules:
-  - age: age13jthku4399se3fvnapyzhzs2f3aall30jkx4klz3k7nalkr0wdmsh5a8h5
+  - path_regex: config[/\\\\]secrets\..*\.env
+    age: age13jthku4399se3fvnapyzhzs2f3aall30jkx4klz3k7nalkr0wdmsh5a8h5

@@ -35,8 +35,18 @@ spec:
               value: "crm-api"
             - name: AUTH_SERVICE_URL
               value: "http://auth-service-node:3001"
+            - name: ORG_SERVICE_URL
+              value: "http://organization-service:3002"
+            - name: CUSTOMER_SERVICE_URL
+              value: "http://customer-service-node:3004"
+            - name: PRODUCT_SERVICE_URL
+              value: "http://product-service-node:3006"
+            - name: TAX_SERVICE_URL
+              value: "http://tax-service:3005"
+            - name: DOCUMENT_SERVICE_URL
+              value: "http://document-service:3003"
             - name: CORS_ORIGIN
-              value: "https://tudominio.com"
+              value: "https://steep-geology-napping.ngrok-free.dev"
             - name: RATE_LIMIT_WINDOW_MS
               value: "60000"
             - name: RATE_LIMIT_MAX

@@ -20,7 +20,12 @@ export function createGateway(config: GatewayConfig): Hono {
 
   // ── CORS ──
   if (config.cors) {
-    app.use('*', cors({ origin: config.cors.origin }));
+    app.use('*', cors({
+      origin: config.cors.origin,
+      allowMethods: ['GET', 'HEAD', 'PUT', 'POST', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowHeaders: ['Content-Type', 'Authorization'],
+      credentials: true,
+    }));
   }
 
   // ── Rate limit ──

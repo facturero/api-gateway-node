@@ -3,11 +3,23 @@ import { loadEnv } from './env';
 import { JwtAuthenticator } from '../core/authenticator';
 import type { GatewayConfig } from '../core/types';
 
+/**
+ * Normaliza una clave PEM que puede venir con `\n` como texto literal (típico
+ * en archivos .env / secrets, donde no se interpretan escapes) o con saltos de
+ * línea reales. OpenSSL solo acepta saltos reales; sin esto, el parser lanza
+ * `header too long` y todo JWT es rechazado.
+ */
+function normalizePem(pem: string): string {
+  // Reemplaza "\n" literal (backslash + n) por salto de línea real.
+  return pem.replace(/\\n/g, '\n').trim();
+}
+
 export function buildGatewayConfig(): GatewayConfig {
   const env = loadEnv();
 
-  const publicKey =
+  const rawPublicKey =
     env.JWT_PUBLIC_KEY ?? readFileSync(env.JWT_PUBLIC_KEY_PATH, 'utf-8');
+  const publicKey = normalizePem(rawPublicKey);
 
   const authenticator = new JwtAuthenticator({
     publicKey,

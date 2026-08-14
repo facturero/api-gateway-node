@@ -47,6 +47,10 @@ spec:
               value: "http://document-service:3003"
             - name: CORS_ORIGIN
               value: "https://steep-geology-napping.ngrok-free.dev"
+            - name: OTEL_SERVICE_NAME
+              value: "api-gateway"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.observability.svc.cluster.local:4318"
             - name: RATE_LIMIT_WINDOW_MS
               value: "60000"
             - name: RATE_LIMIT_MAX

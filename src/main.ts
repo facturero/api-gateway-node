@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import './infrastructure/telemetry/otel';
 import { serve } from '@hono/node-server';
 import { loadEnv } from './config/env';
 import { buildGatewayConfig } from './config/gateway.config';

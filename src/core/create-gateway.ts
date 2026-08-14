@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { httpInstrumentationMiddleware } from '@hono/otel';
 import type { GatewayConfig, RouteRule } from './types';
 import { buildContextHeaders, deriveSpoofHeaders } from './context';
 import { proxyRequest } from './proxy';
@@ -11,6 +12,15 @@ export function createGateway(config: GatewayConfig): Hono {
   const spoofHeaders = deriveSpoofHeaders(config.claimHeaders);
   const rateLimitStore = config.rateLimit?.store ?? new InMemoryRateLimitStore();
   const requestIdHeader = config.requestIdHeader ?? 'X-Request-Id';
+
+  // ── OTel ──
+  if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
+    app.use('*', httpInstrumentationMiddleware({
+      serviceName: process.env.OTEL_SERVICE_NAME ?? 'api-gateway',
+      captureRequestHeaders: ['x-request-id'],
+      spanNameFactory: (c) => `HTTP ${c.req.method} ${c.req.path}`,
+    }));
+  }
 
   // ── Request-ID ──
   app.use('*', async (c, next) => {

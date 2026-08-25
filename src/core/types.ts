@@ -47,6 +47,7 @@ export interface RouteRule {
   service: string; // nombre del servicio destino (clave en services)
   public?: boolean; // true = no exige token
   stripPrefix?: string; // prefijo a quitar antes de reenviar (opcional)
+  rateLimit?: { windowMs: number; max: number }; // límite propio de la ruta (además del global)
 }
 
 export interface ServiceConfig {
@@ -62,6 +63,9 @@ export interface RateLimitStore {
 export interface RateLimitConfig {
   windowMs: number;
   max: number;
+  trustedIps?: string[];
+  trustedMax?: number;
+  trustedIpCache?: import('./trusted-ip-cache').TrustedIpCache;
   store?: RateLimitStore;
 }
 

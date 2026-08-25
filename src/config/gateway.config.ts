@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { loadEnv } from './env';
 import { JwtAuthenticator } from '../core/authenticator';
 import type { GatewayConfig } from '../core/types';
+import { TrustedIpCache } from '../core/trusted-ip-cache';
 
 /**
  * Normaliza una clave PEM que puede venir con `\n` como texto literal (típico
@@ -33,7 +34,21 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.CUSTOMER_SERVICE_URL) services.push({ name: 'customer-service', url: env.CUSTOMER_SERVICE_URL });
   if (env.PRODUCT_SERVICE_URL) services.push({ name: 'product-service', url: env.PRODUCT_SERVICE_URL });
   if (env.TAX_SERVICE_URL) services.push({ name: 'tax-service', url: env.TAX_SERVICE_URL });
+  if (env.BILLING_SERVICE_URL) services.push({ name: 'billing-service', url: env.BILLING_SERVICE_URL });
+  if (env.FISCAL_SERVICE_URL) services.push({ name: 'fiscal-ecuador', url: env.FISCAL_SERVICE_URL });
+
   if (env.DOCUMENT_SERVICE_URL) services.push({ name: 'document-service', url: env.DOCUMENT_SERVICE_URL });
+  if (env.PLUGIN_CATALOG_SERVICE_URL) services.push({ name: 'plugin-catalog-service', url: env.PLUGIN_CATALOG_SERVICE_URL });
+
+  const fallbackIps = env.RATE_LIMIT_TRUSTED_IPS
+    ? env.RATE_LIMIT_TRUSTED_IPS.split(',').map((s) => s.trim())
+    : [];
+
+  const trustedIpCache = new TrustedIpCache(
+    env.AUTH_SERVICE_URL,
+    fallbackIps,
+    env.TRUSTED_IPS_REFRESH_MS,
+  );
 
   return {
     authenticator,
@@ -54,12 +69,23 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'POST', path: '/auth/accept-invite', service: 'auth-service', public: true },
       { method: 'ANY', path: '/auth/*', service: 'auth-service', public: false },
 
+      { method: 'GET', path: '/trusted-ips/enabled', service: 'auth-service', public: true },
+      { method: 'ANY', path: '/trusted-ips/*', service: 'auth-service' },
+
       { method: 'ANY', path: '/users/*', service: 'auth-service' },
       { method: 'ANY', path: '/roles/*', service: 'auth-service' },
       { method: 'GET', path: '/permissions', service: 'auth-service' },
 
+      // plugin-catalog-service — estas reglas DEBEN ir antes de '/organizations/*'
+      { method: 'GET', path: '/plugins', service: 'plugin-catalog-service', public: true },
+      { method: 'ANY', path: '/organizations/me/plugins/*', service: 'plugin-catalog-service', stripPrefix: '' },
+      { method: 'ANY', path: '/organizations/me/plugins', service: 'plugin-catalog-service', stripPrefix: '' },
+      { method: 'ANY', path: '/organizations/me/plugin-requests', service: 'plugin-catalog-service', stripPrefix: '' },
+      { method: 'ANY', path: '/admin/plugin-requests/*', service: 'plugin-catalog-service', stripPrefix: '' },
+
       { method: 'ANY', path: '/organizations/*', service: 'org-service', stripPrefix: '' },
       { method: 'ANY', path: '/establishments/*', service: 'org-service', stripPrefix: '' },
+      { method: 'POST', path: '/billing-points/pair', service: 'org-service', stripPrefix: '', public: true, rateLimit: { windowMs: 60_000, max: 5 } },
 
       { method: 'ANY', path: '/customers/*', service: 'customer-service', stripPrefix: '' },
       { method: 'ANY', path: '/contacts/*', service: 'customer-service', stripPrefix: '' },
@@ -72,6 +98,11 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'ANY', path: '/units/*', service: 'product-service', stripPrefix: '' },
       { method: 'ANY', path: '/tax-rates/*', service: 'product-service', stripPrefix: '' },
 
+      { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '' },
+
+      { method: 'ANY', path: '/fiscal-invoices/*', service: 'fiscal-ecuador', stripPrefix: '' },
+      { method: 'ANY', path: '/certificates/*', service: 'fiscal-ecuador', stripPrefix: '' },
+
       { method: 'ANY', path: '/countries/*', service: 'tax-service', stripPrefix: '' },
 
       { method: 'GET', path: '/files/:id/download', service: 'document-service', stripPrefix: '', public: true },
@@ -81,6 +112,9 @@ export function buildGatewayConfig(): GatewayConfig {
     rateLimit: {
       windowMs: env.RATE_LIMIT_WINDOW_MS,
       max: env.RATE_LIMIT_MAX,
+      trustedIps: fallbackIps,
+      trustedMax: env.RATE_LIMIT_TRUSTED_MAX,
+      trustedIpCache,
     },
   };
 }

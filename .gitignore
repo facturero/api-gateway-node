@@ -8,6 +8,7 @@ dist/
 .env
 .env.local
 *.local
+config/*.env
 
 # claves (la pública se inyecta/copia en despliegue, no se commitea)
 *.pem

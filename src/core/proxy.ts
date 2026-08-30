@@ -1,6 +1,8 @@
 import type { Context } from 'hono';
 import type { RouteRule, ServiceConfig } from './types';
 import { errorBody } from './errors';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 
 // eslint-disable-next-line no-console
 const log = console.error.bind(console, '[proxy]');
@@ -26,6 +28,63 @@ function sanitizeResponseHeaders(headers: Headers): Headers {
   return sanitized;
 }
 
+async function proxyRawS3(
+  c: Context,
+  rule: RouteRule,
+  service: ServiceConfig,
+  requestId: string,
+): Promise<Response> {
+  const incomingUrl = new URL(c.req.url);
+  let targetPath = incomingUrl.pathname;
+  if (rule.stripPrefix) {
+    targetPath = targetPath.replace(rule.stripPrefix, '') || '/';
+  }
+  const targetUrl = new URL(targetPath, service.url);
+  targetUrl.search = incomingUrl.search;
+
+  const body = Buffer.from(await c.req.raw.arrayBuffer());
+
+  const h = new Headers(c.req.raw.headers);
+  for (const key of HOP_BY_HOP_HEADERS) h.delete(key);
+  h.delete('expect');
+  h.set('host', c.req.raw.headers.get('host') ?? targetUrl.host);
+  h.set('content-length', String(body.length));
+  h.set('X-Request-Id', requestId);
+
+  const isHttps = targetUrl.protocol === 'https:';
+  const lib = isHttps ? httpsRequest : httpRequest;
+
+  return new Promise((resolve) => {
+    const req = lib(
+      {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port ? Number(targetUrl.port) : isHttps ? 443 : 80,
+        path: targetUrl.pathname + targetUrl.search,
+        method: c.req.method,
+        headers: Object.fromEntries(h.entries()),
+      } as any,
+      (res: any) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (d: Buffer) => chunks.push(d));
+        res.on('end', () => {
+          resolve(
+            new Response(Buffer.concat(chunks), {
+              status: res.statusCode,
+              statusText: res.statusMessage,
+              headers: sanitizeResponseHeaders(new Headers(res.headers)),
+            }),
+          );
+        });
+      },
+    );
+    req.on('error', (err: Error) => {
+      log('Raw S3 proxy error:', err);
+      resolve(c.json(errorBody('DOWNSTREAM_ERROR', 'Error al conectar con el almacenamiento'), 502));
+    });
+    req.end(body);
+  });
+}
+
 export async function proxyRequest(
   c: Context,
   rule: RouteRule,
@@ -37,6 +96,10 @@ export async function proxyRequest(
   const service = services.find((s) => s.name === rule.service);
   if (!service) {
     return c.json(errorBody('SERVICE_NOT_FOUND', `Servicio '${rule.service}' no configurado`), 500);
+  }
+
+  if (service.name === 'store') {
+    return proxyRawS3(c, rule, service, requestId);
   }
 
   const incomingUrl = new URL(c.req.url);

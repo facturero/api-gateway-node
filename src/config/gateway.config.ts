@@ -108,8 +108,9 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'GET', path: '/files/:id/download', service: 'document-service', stripPrefix: '', public: true },
       { method: 'ANY', path: '/files/*', service: 'document-service', stripPrefix: '' },
 
-      // MinIO/S3 object store — el frontend sube el objeto directo con la URL firmada.
-      { method: 'ANY', path: '/store/*', service: 'store', stripPrefix: '/store', public: true },
+      // MinIO/S3 object store — la URL presigned firmada usa el bucket en el path (path-style),
+      // por lo que el URI debe llegar intacto a MinIO (sin stripPrefix).
+      { method: 'ANY', path: '/cmr-documents/*', service: 'store', stripPrefix: '', public: true },
     ],
     cors: { origin: env.CORS_ORIGIN },
     rateLimit: {

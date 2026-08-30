@@ -47,6 +47,11 @@ async function proxyRawS3(
   const h = new Headers(c.req.raw.headers);
   for (const key of HOP_BY_HOP_HEADERS) h.delete(key);
   h.delete('expect');
+  // La URL pre-firmada ya lleva su propia autenticación (X-Amz-Signature en el query).
+  // Cualquier Authorization/Cookie del cliente (p.ej. Bearer JWT del front) haría que MinIO
+  // devuelva 400 "request has multiple authentication types".
+  h.delete('authorization');
+  h.delete('cookie');
   h.set('host', c.req.raw.headers.get('host') ?? targetUrl.host);
   h.set('content-length', String(body.length));
   h.set('X-Request-Id', requestId);

@@ -3,6 +3,7 @@ import { loadEnv } from './env';
 import { JwtAuthenticator } from '../core/authenticator';
 import type { GatewayConfig } from '../core/types';
 import { TrustedIpCache } from '../core/trusted-ip-cache';
+import { PluginActivationCache } from '../core/plugin-activation-cache';
 
 /**
  * Normaliza una clave PEM que puede venir con `\n` como texto literal (típico
@@ -40,6 +41,10 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.DOCUMENT_SERVICE_URL) services.push({ name: 'document-service', url: env.DOCUMENT_SERVICE_URL });
   if (env.PLUGIN_CATALOG_SERVICE_URL) services.push({ name: 'plugin-catalog-service', url: env.PLUGIN_CATALOG_SERVICE_URL });
   if (env.STORE_SERVICE_URL) services.push({ name: 'store', url: env.STORE_SERVICE_URL });
+  const pluginActivations = env.PLUGIN_CATALOG_SERVICE_URL
+    ? new PluginActivationCache(env.PLUGIN_CATALOG_SERVICE_URL)
+    : null;
+
   const fallbackIps = env.RATE_LIMIT_TRUSTED_IPS
     ? env.RATE_LIMIT_TRUSTED_IPS.split(',').map((s) => s.trim())
     : [];
@@ -84,13 +89,13 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'ANY', path: '/admin/plugin-requests/*', service: 'plugin-catalog-service', stripPrefix: '' },
 
       { method: 'ANY', path: '/organizations/*', service: 'org-service', stripPrefix: '' },
-      { method: 'ANY', path: '/establishments/*', service: 'org-service', stripPrefix: '' },
+      { method: 'ANY', path: '/establishments/*', service: 'org-service', stripPrefix: '', requiresPlugin: 'org.establishments' },
       { method: 'POST', path: '/billing-points/pair', service: 'org-service', stripPrefix: '', public: true, rateLimit: { windowMs: 60_000, max: 5 } },
 
-      { method: 'ANY', path: '/customers/*', service: 'customer-service', stripPrefix: '' },
-      { method: 'ANY', path: '/contacts/*', service: 'customer-service', stripPrefix: '' },
-      { method: 'ANY', path: '/addresses/*', service: 'customer-service', stripPrefix: '' },
-      { method: 'ANY', path: '/tags/*', service: 'customer-service', stripPrefix: '' },
+      { method: 'ANY', path: '/customers/*', service: 'customer-service', stripPrefix: '', requiresPlugin: 'crm.contacts' },
+      { method: 'ANY', path: '/contacts/*', service: 'customer-service', stripPrefix: '', requiresPlugin: 'crm.contacts' },
+      { method: 'ANY', path: '/addresses/*', service: 'customer-service', stripPrefix: '', requiresPlugin: 'crm.contacts' },
+      { method: 'ANY', path: '/tags/*', service: 'customer-service', stripPrefix: '', requiresPlugin: 'crm.contacts' },
       { method: 'ANY', path: '/identification-types/*', service: 'customer-service', stripPrefix: '' },
 
       { method: 'ANY', path: '/products/*', service: 'product-service', stripPrefix: '' },
@@ -98,10 +103,10 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'ANY', path: '/units/*', service: 'product-service', stripPrefix: '' },
       { method: 'ANY', path: '/tax-rates/*', service: 'product-service', stripPrefix: '' },
 
-      { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '' },
+      { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 
-      { method: 'ANY', path: '/fiscal-invoices/*', service: 'fiscal-ecuador', stripPrefix: '' },
-      { method: 'ANY', path: '/certificates/*', service: 'fiscal-ecuador', stripPrefix: '' },
+      { method: 'ANY', path: '/fiscal-invoices/*', service: 'fiscal-ecuador', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
+      { method: 'ANY', path: '/certificates/*', service: 'fiscal-ecuador', stripPrefix: '', requiresPlugin: 'finance.electronic_certificate' },
 
       { method: 'ANY', path: '/countries/*', service: 'tax-service', stripPrefix: '' },
 
@@ -112,6 +117,9 @@ export function buildGatewayConfig(): GatewayConfig {
       // por lo que el URI debe llegar intacto a MinIO (sin stripPrefix).
       { method: 'ANY', path: '/cmr-documents/*', service: 'store', stripPrefix: '', public: true },
     ],
+    ...(pluginActivations
+      ? { pluginGate: { cache: pluginActivations, organizationClaim: 'org_id' } }
+      : {}),
     cors: { origin: env.CORS_ORIGIN },
     rateLimit: {
       windowMs: env.RATE_LIMIT_WINDOW_MS,

@@ -169,6 +169,40 @@ function createRouteHandler(
       claims = authResult.claims;
     }
 
+    // ── Gate por plugins ──
+    // La ruta pertenece a un módulo vendible: la organización debe tenerlo
+    // activo. Se evalúa después de autenticar, para no filtrar qué módulos
+    // tiene contratada una organización a quien no ha iniciado sesión.
+    if (rule.requiresPlugin && config.pluginGate) {
+      const organizationId = claims?.[config.pluginGate.organizationClaim] as string | undefined;
+      if (!organizationId) {
+        return c.json(
+          errorBody('ORG_CONTEXT_REQUIRED', 'El token no identifica una organización.'),
+          403,
+        );
+      }
+      try {
+        const active = await config.pluginGate.cache.isActive(organizationId, rule.requiresPlugin);
+        if (!active) {
+          return c.json(
+            errorBody(
+              'PLUGIN_NOT_ACTIVE',
+              `Este módulo no está activo para su organización. Actívelo en el catálogo de plugins.`,
+            ),
+            403,
+          );
+        }
+      } catch {
+        return c.json(
+          errorBody(
+            'PLUGIN_CHECK_UNAVAILABLE',
+            'No se pudo verificar los módulos activos de la organización.',
+          ),
+          503,
+        );
+      }
+    }
+
     const contextHeaders = buildContextHeaders(claims, config.claimHeaders);
     const requestId = (c as any).get('requestId') as string;
 

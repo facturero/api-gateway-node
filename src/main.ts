@@ -21,6 +21,9 @@ createRealtimeHub({
   httpServer,
   authenticator: config.authenticator,
   rabbitmqUrl: env.RABBITMQ_URL,
+  // Activar o desactivar un plugin debe reflejarse en el gate al instante,
+  // sin esperar al TTL de la cache.
+  onPluginsChanged: (organizationId) => config.pluginGate?.cache.invalidate(organizationId),
 });
 
 httpServer.listen(env.PORT, () => {

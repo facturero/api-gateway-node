@@ -21,6 +21,8 @@ export interface RealtimeHubOptions {
   httpServer: HttpServer;
   authenticator: Authenticator;
   rabbitmqUrl?: string;
+  /** Se invoca con la organización afectada por cada evento `plugin.*`. */
+  onPluginsChanged?: (organizationId: string) => void;
 }
 
 export function createRealtimeHub(options: RealtimeHubOptions): SocketServer {
@@ -72,7 +74,7 @@ export function createRealtimeHub(options: RealtimeHubOptions): SocketServer {
   });
 
   if (options.rabbitmqUrl) {
-    startRealtimeConsumer(io, options.rabbitmqUrl).catch((err) => {
+    startRealtimeConsumer(io, options.rabbitmqUrl, options.onPluginsChanged).catch((err) => {
       console.error('[realtime] consumidor de eventos falló:', err);
     });
   }
@@ -80,7 +82,11 @@ export function createRealtimeHub(options: RealtimeHubOptions): SocketServer {
   return io;
 }
 
-async function startRealtimeConsumer(io: SocketServer, rabbitmqUrl: string): Promise<void> {
+async function startRealtimeConsumer(
+  io: SocketServer,
+  rabbitmqUrl: string,
+  onPluginsChanged?: (organizationId: string) => void,
+): Promise<void> {
   const connectLoop = async (): Promise<void> => {
     try {
       const model: ChannelModel = await connect(rabbitmqUrl);
@@ -96,7 +102,7 @@ async function startRealtimeConsumer(io: SocketServer, rabbitmqUrl: string): Pro
 
       channel.consume(queue, (msg: ConsumeMessage | null) => {
         if (!msg) return;
-        handleRealtimeMessage(io, channel, msg).catch((err) => {
+        handleRealtimeMessage(io, channel, msg, onPluginsChanged).catch((err) => {
           console.error('[realtime] error al procesar evento:', err);
           channel.nack(msg, false, true);
         });
@@ -116,6 +122,7 @@ async function handleRealtimeMessage(
   io: SocketServer,
   channel: Channel,
   msg: ConsumeMessage,
+  onPluginsChanged?: (organizationId: string) => void,
 ): Promise<void> {
   if (!msg.fields || !msg.fields.routingKey) return;
 
@@ -163,6 +170,10 @@ async function handleRealtimeMessage(
       channel.nack(msg, false, false);
       return;
     }
+    // El gate del gateway cachea los plugins activos por organizacion: hay que
+    // invalidarla antes de avisar a los sockets, para que el refetch que dispara
+    // el frontend ya lea el estado nuevo.
+    onPluginsChanged?.(orgId);
     io.to(`${ROOM_PREFIX}${orgId}`).emit('plugins.changed', {
       event: routingKey,
       ...payload,

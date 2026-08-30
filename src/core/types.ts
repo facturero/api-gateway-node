@@ -48,6 +48,7 @@ export interface RouteRule {
   public?: boolean; // true = no exige token
   stripPrefix?: string; // prefijo a quitar antes de reenviar (opcional)
   rateLimit?: { windowMs: number; max: number }; // límite propio de la ruta (además del global)
+  requiresPlugin?: string; // código de plugin que la organización debe tener activo
 }
 
 export interface ServiceConfig {
@@ -73,6 +74,15 @@ export interface CorsConfig {
   origin: string | string[];
 }
 
+/**
+ * Gate por plugins: qué cache consultar y de qué claim del token sale la
+ * organización. El motor no conoce el nombre del claim; lo pone la app.
+ */
+export interface PluginGateConfig {
+  cache: import('./plugin-activation-cache').PluginActivationCache;
+  organizationClaim: string;
+}
+
 /** Configuración completa del gateway: el perfil de una app. */
 export interface GatewayConfig {
   authenticator: Authenticator;
@@ -81,5 +91,6 @@ export interface GatewayConfig {
   routes: RouteRule[];
   cors?: CorsConfig;
   rateLimit?: RateLimitConfig;
+  pluginGate?: PluginGateConfig;
   requestIdHeader?: string; // por defecto 'X-Request-Id'
 }

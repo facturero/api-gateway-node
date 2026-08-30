@@ -66,18 +66,18 @@ export async function proxyRequest(
 
   downstreamHeaders.set('X-Request-Id', requestId);
 
-  // Reenviar el body como stream requiere duplex 'half' en undici (fetch de Node).
+  // Reenviar el body como buffer para preservar Content-Length de forma determinista
+  // (MinIO/la firma SigV4 del presigned exige Content-Length; un stream devuelve chunked sin él).
   const hasBody = c.req.method !== 'GET' && c.req.method !== 'HEAD';
-  const body = hasBody ? c.req.raw.body : null;
-  const init: RequestInit & { duplex?: 'half'; redirect?: 'manual' } = {
+  const body = hasBody ? await c.req.raw.arrayBuffer() : null;
+  const init: RequestInit = {
     method: c.req.method,
     headers: downstreamHeaders,
     redirect: 'manual',
   };
   if (body) {
-    init.body = body;
-    init.duplex = 'half';
-    downstreamHeaders.delete('Content-Length');
+    init.body = new Uint8Array(body);
+    downstreamHeaders.set('Content-Length', String(body.byteLength));
   }
 
   // undici (Node.js fetch) no soporta ciertos headers del cliente original

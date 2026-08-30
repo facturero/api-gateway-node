@@ -39,7 +39,7 @@ export function buildGatewayConfig(): GatewayConfig {
 
   if (env.DOCUMENT_SERVICE_URL) services.push({ name: 'document-service', url: env.DOCUMENT_SERVICE_URL });
   if (env.PLUGIN_CATALOG_SERVICE_URL) services.push({ name: 'plugin-catalog-service', url: env.PLUGIN_CATALOG_SERVICE_URL });
-
+  if (env.STORE_SERVICE_URL) services.push({ name: 'store', url: env.STORE_SERVICE_URL });
   const fallbackIps = env.RATE_LIMIT_TRUSTED_IPS
     ? env.RATE_LIMIT_TRUSTED_IPS.split(',').map((s) => s.trim())
     : [];
@@ -107,6 +107,9 @@ export function buildGatewayConfig(): GatewayConfig {
 
       { method: 'GET', path: '/files/:id/download', service: 'document-service', stripPrefix: '', public: true },
       { method: 'ANY', path: '/files/*', service: 'document-service', stripPrefix: '' },
+
+      // MinIO/S3 object store — el frontend sube el objeto directo con la URL firmada.
+      { method: 'ANY', path: '/store/*', service: 'store', stripPrefix: '/store', public: true },
     ],
     cors: { origin: env.CORS_ORIGIN },
     rateLimit: {

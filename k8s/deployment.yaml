@@ -45,6 +45,8 @@ spec:
               value: "http://tax-service:3005"
             - name: DOCUMENT_SERVICE_URL
               value: "http://document-service:3003"
+            - name: STORE_SERVICE_URL
+              value: "http://minio:9000"
             - name: CORS_ORIGIN
               value: "https://crm.noahsolution.com"
             - name: OTEL_SERVICE_NAME

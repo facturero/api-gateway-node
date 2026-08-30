@@ -46,7 +46,7 @@ spec:
             - name: DOCUMENT_SERVICE_URL
               value: "http://document-service:3003"
             - name: CORS_ORIGIN
-              value: "https://steep-geology-napping.ngrok-free.dev"
+              value: "https://crm.noahsolution.com"
             - name: OTEL_SERVICE_NAME
               value: "api-gateway"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

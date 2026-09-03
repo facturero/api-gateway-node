@@ -120,7 +120,10 @@ export function buildGatewayConfig(): GatewayConfig {
     ...(pluginActivations
       ? { pluginGate: { cache: pluginActivations, organizationClaim: 'org_id' } }
       : {}),
-    cors: { origin: env.CORS_ORIGIN },
+    // CORS_ORIGIN admite varios orígenes separados por coma: en desarrollo el
+    // front se abre tanto por localhost como por la IP de red (para probarlo
+    // desde el móvil), y ambos tienen que pasar el preflight.
+    cors: { origin: env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean) },
     rateLimit: {
       windowMs: env.RATE_LIMIT_WINDOW_MS,
       max: env.RATE_LIMIT_MAX,

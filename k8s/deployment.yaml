@@ -49,6 +49,8 @@ spec:
               value: "http://plugin-catalog-service:3011"
             - name: NOTIFICATION_SERVICE_URL
               value: "http://notification-service-node:3011"
+            - name: AUDIT_LOG_SERVICE_URL
+              value: "http://audit-log-service-node:3012"
             - name: STORE_SERVICE_URL
               value: "http://minio:9000"
             # Sin RABBITMQ_URL el hub de /ws acepta sockets pero nunca arranca el

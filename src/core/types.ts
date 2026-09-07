@@ -49,6 +49,12 @@ export interface RouteRule {
   stripPrefix?: string; // prefijo a quitar antes de reenviar (opcional)
   rateLimit?: { windowMs: number; max: number }; // límite propio de la ruta (además del global)
   requiresPlugin?: string; // código de plugin que la organización debe tener activo
+  /**
+   * Permiso que el claim `permissions` del token debe contener (también admite
+   * el comodín `*`). Enforcement grueso, previo a enrutar: el servicio hace el
+   * fino. Ej. audit-log-service → 'audit:read'.
+   */
+  permission?: string;
 }
 
 export interface ServiceConfig {

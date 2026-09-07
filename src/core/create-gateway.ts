@@ -238,6 +238,24 @@ function createRouteHandler(
       }
     }
 
+    // ── Gate por permisos ──
+    // Enforcement grueso: el claim `permissions` del token debe traer el
+    // permiso de la ruta (o el comodín '*'). El servicio downstream hace el
+    // enforcement fino releyendo X-Permissions. Se evalúa después de autenticar
+    // para no filtrar la existencia de la ruta a quien no ha iniciado sesión.
+    if (rule.permission) {
+      const perms = claims?.permissions;
+      const hasPermission = Array.isArray(perms)
+        ? (perms as unknown[]).some((p) => p === rule.permission || p === '*')
+        : false;
+      if (!hasPermission) {
+        return c.json(
+          errorBody('PERMISSION_DENIED', `Permiso requerido: ${rule.permission}`),
+          403,
+        );
+      }
+    }
+
     const contextHeaders = buildContextHeaders(claims, config.claimHeaders);
     const requestId = (c as any).get('requestId') as string;
 

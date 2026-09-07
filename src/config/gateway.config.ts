@@ -43,6 +43,7 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.PLUGIN_CATALOG_SERVICE_URL) services.push({ name: 'plugin-catalog-service', url: env.PLUGIN_CATALOG_SERVICE_URL });
   if (env.STORE_SERVICE_URL) services.push({ name: 'store', url: env.STORE_SERVICE_URL });
   if (env.NOTIFICATION_SERVICE_URL) services.push({ name: 'notification-service', url: env.NOTIFICATION_SERVICE_URL });
+  if (env.AUDIT_LOG_SERVICE_URL) services.push({ name: 'audit-log-service', url: env.AUDIT_LOG_SERVICE_URL });
   const pluginActivations = env.PLUGIN_CATALOG_SERVICE_URL
     ? new PluginActivationCache(env.PLUGIN_CATALOG_SERVICE_URL)
     : null;
@@ -104,6 +105,10 @@ export function buildGatewayConfig(): GatewayConfig {
 
       // notification-service — catálogo de providers y preferencias por usuario.
       { method: 'ANY', path: '/notifications/*', service: 'notification-service', stripPrefix: '' },
+
+      // audit-log-service — bitácora de solo lectura; el gateway exige audit:read y
+      // el servicio hace su propio chequeo fino del X-Permissions inyectado.
+      { method: 'ANY', path: '/audit-logs/*', service: 'audit-log-service', stripPrefix: '', permission: 'audit:read' },
 
       { method: 'ANY', path: '/organizations/*', service: 'org-service', stripPrefix: '' },
       { method: 'ANY', path: '/establishments/*', service: 'org-service', stripPrefix: '', requiresPlugin: 'org.establishments' },

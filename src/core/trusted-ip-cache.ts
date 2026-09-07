@@ -54,8 +54,15 @@ export class TrustedIpCache {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as TrustedIpEntry[];
-      this.ips = data.map((e) => e.ip);
-      console.log(`[trusted-ip-cache] ${this.ips.length} IPs cargadas desde auth-service`);
+      const fetched = data.map((e) => e.ip);
+      // Una lista vacía en auth-service (nadie configuró trusted-ips todavía)
+      // no debe apagar el fallback de red interna (Docker) — si lo hiciera,
+      // RATE_LIMIT_TRUSTED_IPS quedaría muerto en cualquier instalación nueva.
+      this.ips = fetched.length > 0 ? fetched : this.fallbackIps;
+      console.log(
+        `[trusted-ip-cache] ${fetched.length} IPs cargadas desde auth-service` +
+          (fetched.length === 0 ? ` (usando fallback: ${this.fallbackIps.length} IPs)` : ''),
+      );
     } catch (err) {
       if (this.ips.length === 0) {
         this.ips = [...this.fallbackIps];

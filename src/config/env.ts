@@ -11,6 +11,7 @@ const envSchema = z.object({
   JWT_AUDIENCE: z.string().min(1),
 
   AUTH_SERVICE_URL: z.string().url(),
+  INTERNAL_SERVICE_SECRET: z.string().optional(),
   ORG_SERVICE_URL: z.string().url().optional(),
   CUSTOMER_SERVICE_URL: z.string().url().optional(),
   PRODUCT_SERVICE_URL: z.string().url().optional(),

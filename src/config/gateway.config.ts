@@ -4,6 +4,7 @@ import { JwtAuthenticator } from '../core/authenticator';
 import type { GatewayConfig } from '../core/types';
 import { TrustedIpCache } from '../core/trusted-ip-cache';
 import { PluginActivationCache } from '../core/plugin-activation-cache';
+import { PermissionsVersionCache } from '../core/permissions-cache';
 
 /**
  * Normaliza una clave PEM que puede venir con `\n` como texto literal (típico
@@ -55,6 +56,12 @@ export function buildGatewayConfig(): GatewayConfig {
     env.TRUSTED_IPS_REFRESH_MS,
   );
 
+  // BUG #9: valida el pv de cada token contra auth-service (TTL corto, fail-open).
+  const permissionsCache = new PermissionsVersionCache(
+    env.AUTH_SERVICE_URL,
+    env.INTERNAL_SERVICE_SECRET,
+  );
+
   return {
     authenticator,
     claimHeaders: [
@@ -65,6 +72,7 @@ export function buildGatewayConfig(): GatewayConfig {
       { claim: 'permissions', header: 'X-Permissions' },
     ],
     services,
+    permissionsCache,
     routes: [
       { method: 'POST', path: '/auth/register', service: 'auth-service', public: true },
       { method: 'POST', path: '/auth/login', service: 'auth-service', public: true },
@@ -72,6 +80,11 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'POST', path: '/auth/refresh', service: 'auth-service', public: true },
       { method: 'POST', path: '/auth/logout', service: 'auth-service', public: true },
       { method: 'POST', path: '/auth/accept-invite', service: 'auth-service', public: true },
+      // Sin esta regla, /auth/password-reset caía en el catch-all de abajo
+      // (public: false) — el gateway exigía un Bearer token para consumir un
+      // link de "olvidé mi contraseña", que por definición es para alguien
+      // SIN sesión activa. Bug real, no solo hueco de test (hallazgo #24).
+      { method: 'POST', path: '/auth/password-reset', service: 'auth-service', public: true },
       { method: 'ANY', path: '/auth/*', service: 'auth-service', public: false },
 
       { method: 'GET', path: '/trusted-ips/enabled', service: 'auth-service', public: true },

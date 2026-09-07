@@ -24,6 +24,14 @@ createRealtimeHub({
   // Activar o desactivar un plugin debe reflejarse en el gate al instante,
   // sin esperar al TTL de la cache.
   onPluginsChanged: (organizationId) => config.pluginGate?.cache.invalidate(organizationId),
+  // Un cambio de identidad (role.updated, user.disabled/enabled, ...) deja el
+  // pv del token viejo: invalidar la caché para que la próxima request del
+  // usuario afectado detecte TOKEN_STALE (BUG #9).
+  onPermissionsChanged: (userIds) => {
+    for (const uid of userIds) {
+      config.permissionsCache?.invalidate(uid);
+    }
+  },
 });
 
 httpServer.listen(env.PORT, () => {

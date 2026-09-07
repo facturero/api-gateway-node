@@ -93,4 +93,10 @@ export interface GatewayConfig {
   rateLimit?: RateLimitConfig;
   pluginGate?: PluginGateConfig;
   requestIdHeader?: string; // por defecto 'X-Request-Id'
+  /**
+   * Cache de permissions-version por usuario. Si está presente, las rutas
+   * autenticadas comparan el `pv` del claim con el pv actual (auth-service) y
+   * responden 401 TOKEN_STALE cuando el token quedó viejo (BUG #9).
+   */
+  permissionsCache?: import('./permissions-cache').PermissionsVersionCache;
 }

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { getConnInfo } from '@hono/node-server/conninfo';
 import { httpInstrumentationMiddleware } from '@hono/otel';
 import type { GatewayConfig, RateLimitStore, RouteRule } from './types';
 import { buildContextHeaders, deriveSpoofHeaders } from './context';
@@ -8,9 +9,19 @@ import { errorBody } from './errors';
 import { InMemoryRateLimitStore } from './rate-limit';
 
 function clientIp(c: any): string {
+  // x-forwarded-for/cf-connecting-ip solo existen detrás de un proxy externo
+  // (Cloudflare, LB). Sin ellos, toda petición directa (dev/tests locales)
+  // caía en el literal 'unknown' — un único bucket de rate-limit compartido
+  // por TODO el tráfico, y nunca matcheable contra ninguna IP/CIDR confiable
+  // (ipToNumber('unknown') === null). Fallback a la IP real del socket.
+  const socketIp = getConnInfo(c).remote.address;
   return (
-    c.req.header('x-forwarded-for') ??
+    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ??
     c.req.header('cf-connecting-ip') ??
+    // Node reporta conexiones IPv4 sobre un socket dual-stack como IPv4
+    // mapeada a IPv6 (::ffff:172.18.0.1) — sin desmapear, ipToNumber()
+    // (que espera un dotted-quad puro) la rechaza y nunca matchea CIDR.
+    socketIp?.replace(/^::ffff:/, '') ??
     'unknown'
   );
 }
@@ -167,6 +178,30 @@ function createRouteHandler(
         );
       }
       claims = authResult.claims;
+    }
+
+    // ── Chequeo de token stale (BUG #9) ──
+    // Solo para rutas autenticadas. El pv del claim debe coincidir con el pv
+    // actual del usuario en auth-service; si no, el token quedó viejo (se
+    // asignó/quitaron roles, se deshabilitó el usuario, etc.) y hay que
+    // re-autenticar. Fail-open: si el chequeo no puede consultar auth-service,
+    // se deja pasar (la caché de pv nunca rompe el API por una caída puntual).
+    if (claims && config.permissionsCache) {
+      const sub = claims?.sub as string | undefined;
+      const pvClaim = claims?.pv as number | undefined;
+      if (sub && typeof pvClaim === 'number') {
+        try {
+          const currentPv = await config.permissionsCache.getPv(sub);
+          if (currentPv !== null && currentPv !== pvClaim) {
+            return c.json(
+              errorBody('TOKEN_STALE', 'Los permisos o el estado de la sesión cambiaron. Inicie sesión de nuevo.'),
+              401,
+            );
+          }
+        } catch {
+          // fail-open
+        }
+      }
     }
 
     // ── Gate por plugins ──

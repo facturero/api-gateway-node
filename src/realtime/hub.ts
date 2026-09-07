@@ -2,6 +2,7 @@ import { Server as SocketServer } from 'socket.io';
 import type { Server as HttpServer } from 'node:http';
 import { Channel, ChannelModel, connect, ConsumeMessage } from 'amqplib';
 import type { Authenticator } from '../core/types';
+import type { NotificationGate } from './notification-gate';
 const EXCHANGE = 'crm.events';
 const ROOM_PREFIX = 'catalog:';
 const DEVICE_ROOM_PREFIX = 'device:';
@@ -22,7 +23,10 @@ const USER_ROOM_PREFIX = 'user:';
 //        por cada usuario afectado (se le quitó/agregó roles, se le deshabilitó,
 //        etc.). El frontend refresca su store al instante; el pv del token quedó
 //        viejo y el gateway responderá 401 TOKEN_STALE hasta que re-autentique
-//        (BUG #9).
+//        (BUG #9). Los identity.* que también son providers de notificaciones
+//        emiten además `notification` (campana), si el canal `app` está activo.
+//      * billing.invoice.#            -> `notification` a `user:<uid>` (factura
+//        emitida/anulada), gateado por el canal `app` igual que identity.*.
 export interface RealtimeHubOptions {
   httpServer: HttpServer;
   authenticator: Authenticator;
@@ -31,6 +35,9 @@ export interface RealtimeHubOptions {
   onPluginsChanged?: (organizationId: string) => void;
   /** Se invoca con los usuarios afectados por cada evento `identity.*`. */
   onPermissionsChanged?: (userIds: string[]) => void;
+  /** Gate del canal `app` (campana) contra notification-service. Sin esto, no
+   *  se reenvían eventos de notificación a la campana (solo permissions.changed). */
+  notificationGate?: NotificationGate;
 }
 
 export function createRealtimeHub(options: RealtimeHubOptions): SocketServer {
@@ -86,7 +93,7 @@ export function createRealtimeHub(options: RealtimeHubOptions): SocketServer {
   });
 
   if (options.rabbitmqUrl) {
-    startRealtimeConsumer(io, options.rabbitmqUrl, options.onPluginsChanged, options.onPermissionsChanged).catch((err) => {
+    startRealtimeConsumer(io, options.rabbitmqUrl, options.onPluginsChanged, options.onPermissionsChanged, options.notificationGate).catch((err) => {
       console.error('[realtime] consumidor de eventos falló:', err);
     });
   }
@@ -99,6 +106,7 @@ async function startRealtimeConsumer(
   rabbitmqUrl: string,
   onPluginsChanged?: (organizationId: string) => void,
   onPermissionsChanged?: (userIds: string[]) => void,
+  notificationGate?: NotificationGate,
 ): Promise<void> {
   const connectLoop = async (): Promise<void> => {
     try {
@@ -113,16 +121,17 @@ async function startRealtimeConsumer(
       await channel.bindQueue(queue, EXCHANGE, 'organization.billing_point.#');
       await channel.bindQueue(queue, EXCHANGE, 'plugin.#');
       await channel.bindQueue(queue, EXCHANGE, 'identity.#');
+      await channel.bindQueue(queue, EXCHANGE, 'billing.invoice.#');
 
       channel.consume(queue, (msg: ConsumeMessage | null) => {
         if (!msg) return;
-        handleRealtimeMessage(io, channel, msg, onPluginsChanged, onPermissionsChanged).catch((err) => {
+        handleRealtimeMessage(io, channel, msg, onPluginsChanged, onPermissionsChanged, notificationGate).catch((err) => {
           console.error('[realtime] error al procesar evento:', err);
           channel.nack(msg, false, true);
         });
       });
 
-      console.log('[realtime] consumidor crm.events activo (product.product.*, organization.billing_point.*, plugin.*, identity.*)');
+      console.log('[realtime] consumidor crm.events activo (product.product.*, organization.billing_point.*, plugin.*, identity.*, billing.invoice.*)');
     } catch (err) {
       console.error('[realtime] no se pudo conectar a RabbitMQ, reintentando en 5s:', err);
       setTimeout(connectLoop, 5_000);
@@ -132,17 +141,58 @@ async function startRealtimeConsumer(
   await connectLoop();
 }
 
+/** Reenvía la campana del provider a cada usuario afectado, si el canal `app`
+ *  está activo (el gate consulta las preferencias de notification-service). */
+async function emitProviderNotifications(
+  io: SocketServer,
+  routingKey: string,
+  payload: Record<string, unknown>,
+  userIds: string[],
+  notificationGate?: NotificationGate,
+): Promise<void> {
+  if (!notificationGate || userIds.length === 0) return;
+  for (const uid of userIds) {
+    if (!(await notificationGate.isAppEnabled(uid, routingKey))) continue;
+    io.to(`${USER_ROOM_PREFIX}${uid}`).emit('notification', {
+      event: routingKey,
+      ...payload,
+    });
+  }
+}
+
+function extractUserIds(payload: Record<string, unknown>): string[] {
+  return Array.isArray(payload.userIds)
+    ? (payload.userIds as string[]).filter((u) => typeof u === 'string')
+    : typeof payload.userId === 'string'
+      ? [payload.userId]
+      : [];
+}
+
 async function handleRealtimeMessage(
   io: SocketServer,
   channel: Channel,
   msg: ConsumeMessage,
   onPluginsChanged?: (organizationId: string) => void,
   onPermissionsChanged?: (userIds: string[]) => void,
+  notificationGate?: NotificationGate,
 ): Promise<void> {
   if (!msg.fields || !msg.fields.routingKey) return;
 
   const routingKey = msg.fields.routingKey;
   const payload = JSON.parse(msg.content.toString()) as Record<string, unknown>;
+
+  // Notificaciones de facturación: `billing.invoice.issued/voided` son providers
+  // de notificación (plugin finance.electronic_invoicing). Sin gate no hay campana.
+  if (routingKey.startsWith('billing.invoice.')) {
+    const userIds = extractUserIds(payload);
+    if (!notificationGate || userIds.length === 0) {
+      channel.ack(msg);
+      return;
+    }
+    await emitProviderNotifications(io, routingKey, payload, userIds, notificationGate);
+    channel.ack(msg);
+    return;
+  }
 
   if (routingKey.startsWith('product.product.')) {
     const orgId = payload.organizationId as string | undefined;
@@ -204,11 +254,7 @@ async function handleRealtimeMessage(
     // avisa a cada usuario afectado en su sala `user:<uid>`, para que el
     // frontend actualice el store al instante (y la próxima request le
     // devuelva 401 TOKEN_STALE si sigue con el token viejo).
-    const userIds: string[] = Array.isArray(payload.userIds)
-      ? (payload.userIds as string[]).filter((u) => typeof u === 'string')
-      : typeof payload.userId === 'string'
-        ? [payload.userId]
-        : [];
+    const userIds = extractUserIds(payload);
     if (userIds.length === 0) {
       channel.ack(msg);
       return;
@@ -220,6 +266,9 @@ async function handleRealtimeMessage(
         ...payload,
       });
     }
+    // Los identity.* que son providers de notificación (invited/enabled/...)
+    // también hacen sonar la campana, si el usuario tiene activo el canal app.
+    await emitProviderNotifications(io, routingKey, payload, userIds, notificationGate);
     channel.ack(msg);
     return;
   }

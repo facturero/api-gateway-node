@@ -21,6 +21,7 @@ const envSchema = z.object({
   DOCUMENT_SERVICE_URL: z.string().url().optional(),
   PLUGIN_CATALOG_SERVICE_URL: z.string().url().optional(),
   STORE_SERVICE_URL: z.string().url().optional(),
+  NOTIFICATION_SERVICE_URL: z.string().url().optional(),
 
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
 

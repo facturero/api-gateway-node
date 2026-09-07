@@ -6,6 +6,7 @@ import { loadEnv } from './config/env';
 import { buildGatewayConfig } from './config/gateway.config';
 import { createGateway } from './core/create-gateway';
 import { createRealtimeHub } from './realtime/hub';
+import { HttpNotificationGate } from './realtime/notification-gate';
 
 const env = loadEnv();
 const config = buildGatewayConfig();
@@ -32,6 +33,11 @@ createRealtimeHub({
       config.permissionsCache?.invalidate(uid);
     }
   },
+  // Gate del canal `app` de la campana: consulta notification-service (con caché)
+  // para no sonar si el usuario desactivó la notificación para ese provider.
+  notificationGate: env.NOTIFICATION_SERVICE_URL
+    ? new HttpNotificationGate(env.NOTIFICATION_SERVICE_URL)
+    : undefined,
 });
 
 httpServer.listen(env.PORT, () => {

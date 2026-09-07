@@ -47,8 +47,18 @@ spec:
               value: "http://document-service:3003"
             - name: PLUGIN_CATALOG_SERVICE_URL
               value: "http://plugin-catalog-service:3011"
+            - name: NOTIFICATION_SERVICE_URL
+              value: "http://notification-service-node:3011"
             - name: STORE_SERVICE_URL
               value: "http://minio:9000"
+            # Sin RABBITMQ_URL el hub de /ws acepta sockets pero nunca arranca el
+            # consumidor de crm.events: no hay campana, ni plugins.changed, ni
+            # permissions.changed. El secret lo crea el operador (no el workflow).
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-rabbitmq
+                  key: url
             - name: CORS_ORIGIN
               value: "https://crm.noahsolution.com"
             - name: OTEL_SERVICE_NAME

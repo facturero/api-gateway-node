@@ -54,6 +54,16 @@ export class PermissionsVersionCache {
     this.entries.delete(userId);
   }
 
+  /**
+   * Fuerza la consulta a auth-service ignorando la entrada cacheada (aunque esté
+   * dentro del TTL). Se usa para RECONFIRMAR un rechazo por TOKEN_STALE: la caché
+   * puede quedarse con un pv viejo si un request la pobló justo antes de que el
+   * mismo request subiera el pv (complete-profil crea la organización y bump).
+   */
+  async getPvFresh(userId: string): Promise<number | null> {
+    return this.fetch(userId);
+  }
+
   private async fetch(userId: string): Promise<number | null> {
     try {
       if (!this.internalSecret) return this.fallback(userId);

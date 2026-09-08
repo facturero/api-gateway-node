@@ -186,6 +186,13 @@ function createRouteHandler(
     // asignó/quitaron roles, se deshabilitó el usuario, etc.) y hay que
     // re-autenticar. Fail-open: si el chequeo no puede consultar auth-service,
     // se deja pasar (la caché de pv nunca rompe el API por una caída puntual).
+    //
+    // Segunda verificación (getPvFresh): la caché se puebla durante la misma
+    // petición que puede subir el pv (complete-profile crea la organización y
+    // hace bump). El token nuevo (pv fresco) llegaría enseguida y chocaría con
+    // el pv cacheado (viejo) → falso TOKEN_STALE → logout. Antes de rechazar,
+    // se reconfirma contra auth-service sin caché; solo se rechaza si el valor
+    // fresco realmente no coincide.
     if (claims && config.permissionsCache) {
       const sub = claims?.sub as string | undefined;
       const pvClaim = claims?.pv as number | undefined;
@@ -193,10 +200,15 @@ function createRouteHandler(
         try {
           const currentPv = await config.permissionsCache.getPv(sub);
           if (currentPv !== null && currentPv !== pvClaim) {
-            return c.json(
-              errorBody('TOKEN_STALE', 'Los permisos o el estado de la sesión cambiaron. Inicie sesión de nuevo.'),
-              401,
-            );
+            const freshPv = await config.permissionsCache.getPvFresh(sub);
+            if (freshPv !== null && freshPv !== pvClaim) {
+              return c.json(
+                errorBody('TOKEN_STALE', 'Los permisos o el estado de la sesión cambiaron. Inicie sesión de nuevo.'),
+                401,
+              );
+            }
+            // El pv cacheado era viejo pero el fresco coincide: token válido.
+            // La caché ya quedó actualizada por getPvFresh.
           }
         } catch {
           // fail-open

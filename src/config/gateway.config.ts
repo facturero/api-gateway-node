@@ -108,7 +108,10 @@ export function buildGatewayConfig(): GatewayConfig {
 
       // audit-log-service — bitácora de solo lectura; el gateway exige audit:read y
       // el servicio hace su propio chequeo fino del X-Permissions inyectado.
-      { method: 'ANY', path: '/audit-logs/*', service: 'audit-log-service', stripPrefix: '', permission: 'audit:read' },
+      // GET y no ANY: la bitácora es de solo lectura. Con ANY el gateway
+      // reenviaba POST/PUT/DELETE para que el servicio contestara 404 — mejor
+      // que ni salgan de aquí.
+      { method: 'GET', path: '/audit-logs/*', service: 'audit-log-service', stripPrefix: '', permission: 'audit:read' },
 
       { method: 'ANY', path: '/organizations/*', service: 'org-service', stripPrefix: '' },
       { method: 'ANY', path: '/establishments/*', service: 'org-service', stripPrefix: '', requiresPlugin: 'org.establishments' },

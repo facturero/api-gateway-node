@@ -257,6 +257,12 @@ function createRouteHandler(
     }
 
     const contextHeaders = buildContextHeaders(claims, config.claimHeaders);
+    // La IP del cliente no es un claim del token: solo el gateway puede
+    // afirmarla (mismo criterio que usa el rate-limit). Los servicios la
+    // necesitan para que la bitácora de auditoría registre desde dónde se
+    // hizo cada acción. Va después de borrar los headers spoofeables, así que
+    // lo que mande el cliente en X-Client-Ip se descarta.
+    contextHeaders['X-Client-Ip'] = clientIp(c);
     const requestId = (c as any).get('requestId') as string;
 
     return proxyRequest(c, rule, config.services, contextHeaders, spoofHeaders, requestId);

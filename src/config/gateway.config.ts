@@ -98,6 +98,9 @@ export function buildGatewayConfig(): GatewayConfig {
 
       // plugin-catalog-service — estas reglas DEBEN ir antes de '/organizations/*'
       { method: 'GET', path: '/plugins', service: 'plugin-catalog-service', public: true },
+      { method: 'GET', path: '/business-profiles', service: 'plugin-catalog-service', public: true },
+      { method: 'ANY', path: '/organizations/me/business-profiles/*', service: 'plugin-catalog-service', stripPrefix: '' },
+      { method: 'ANY', path: '/organizations/me/business-profile', service: 'plugin-catalog-service', stripPrefix: '' },
       { method: 'ANY', path: '/organizations/me/plugins/*', service: 'plugin-catalog-service', stripPrefix: '' },
       { method: 'ANY', path: '/organizations/me/plugins', service: 'plugin-catalog-service', stripPrefix: '' },
       { method: 'ANY', path: '/organizations/me/plugin-requests', service: 'plugin-catalog-service', stripPrefix: '' },

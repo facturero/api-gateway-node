@@ -123,10 +123,10 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'ANY', path: '/tags/*', service: 'customer-service', stripPrefix: '', requiresPlugin: 'crm.contacts' },
       { method: 'ANY', path: '/identification-types/*', service: 'customer-service', stripPrefix: '' },
 
-      { method: 'ANY', path: '/products/*', service: 'product-service', stripPrefix: '' },
-      { method: 'ANY', path: '/categories/*', service: 'product-service', stripPrefix: '' },
-      { method: 'ANY', path: '/units/*', service: 'product-service', stripPrefix: '' },
-      { method: 'ANY', path: '/tax-rates/*', service: 'product-service', stripPrefix: '' },
+      { method: 'ANY', path: '/products/*', service: 'product-service', stripPrefix: '', requiresPlugin: 'infra.catalog_products' },
+      { method: 'ANY', path: '/categories/*', service: 'product-service', stripPrefix: '', requiresPlugin: 'infra.catalog_products' },
+      { method: 'ANY', path: '/units/*', service: 'product-service', stripPrefix: '', requiresPlugin: 'infra.catalog_products' },
+      { method: 'ANY', path: '/tax-rates/*', service: 'product-service', stripPrefix: '', requiresPlugin: 'infra.catalog_products' },
 
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 

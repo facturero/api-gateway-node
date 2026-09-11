@@ -35,6 +35,7 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.ORG_SERVICE_URL) services.push({ name: 'org-service', url: env.ORG_SERVICE_URL });
   if (env.CUSTOMER_SERVICE_URL) services.push({ name: 'customer-service', url: env.CUSTOMER_SERVICE_URL });
   if (env.PRODUCT_SERVICE_URL) services.push({ name: 'product-service', url: env.PRODUCT_SERVICE_URL });
+  if (env.INVENTORY_SERVICE_URL) services.push({ name: 'inventory-service', url: env.INVENTORY_SERVICE_URL });
   if (env.TAX_SERVICE_URL) services.push({ name: 'tax-service', url: env.TAX_SERVICE_URL });
   if (env.BILLING_SERVICE_URL) services.push({ name: 'billing-service', url: env.BILLING_SERVICE_URL });
   if (env.FISCAL_SERVICE_URL) services.push({ name: 'fiscal-ecuador', url: env.FISCAL_SERVICE_URL });
@@ -44,6 +45,7 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.STORE_SERVICE_URL) services.push({ name: 'store', url: env.STORE_SERVICE_URL });
   if (env.NOTIFICATION_SERVICE_URL) services.push({ name: 'notification-service', url: env.NOTIFICATION_SERVICE_URL });
   if (env.AUDIT_LOG_SERVICE_URL) services.push({ name: 'audit-log-service', url: env.AUDIT_LOG_SERVICE_URL });
+  if (env.ASSISTANT_SERVICE_URL) services.push({ name: 'assistant-service', url: env.ASSISTANT_SERVICE_URL });
   const pluginActivations = env.PLUGIN_CATALOG_SERVICE_URL
     ? new PluginActivationCache(env.PLUGIN_CATALOG_SERVICE_URL)
     : null;
@@ -116,6 +118,12 @@ export function buildGatewayConfig(): GatewayConfig {
       // que ni salgan de aquí.
       { method: 'GET', path: '/audit-logs/*', service: 'audit-log-service', stripPrefix: '', permission: 'audit:read' },
 
+      // assistant-service — el asistente que ejecuta acciones. No lleva
+      // `requiresPlugin`: va incluido en la plataforma. El servicio necesita el
+      // Authorization original (el proxy lo reenvía) porque vuelve a llamar a
+      // esta misma API en nombre del usuario.
+      { method: 'ANY', path: '/assistant/*', service: 'assistant-service', stripPrefix: '' },
+
       { method: 'ANY', path: '/organizations/*', service: 'org-service', stripPrefix: '' },
       { method: 'ANY', path: '/establishments/*', service: 'org-service', stripPrefix: '', requiresPlugin: 'org.establishments' },
       { method: 'POST', path: '/billing-points/pair', service: 'org-service', stripPrefix: '', public: true, rateLimit: { windowMs: 60_000, max: 5 } },
@@ -130,6 +138,14 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'ANY', path: '/categories/*', service: 'product-service', stripPrefix: '', requiresPlugin: 'infra.catalog_products' },
       { method: 'ANY', path: '/units/*', service: 'product-service', stripPrefix: '', requiresPlugin: 'infra.catalog_products' },
       { method: 'ANY', path: '/tax-rates/*', service: 'product-service', stripPrefix: '', requiresPlugin: 'infra.catalog_products' },
+
+      // Bodegas y kardex cuelgan de plugins distintos a propósito: se puede
+      // tener kardex con una sola bodega y el concepto oculto en el frontend.
+      // OJO: esto solo corta el HTTP. El consumo de stock por venta llega por
+      // RabbitMQ, que no pasa por aquí, y lo corta inventory-service por su
+      // cuenta (ver su IMPLEMENTATION.md, "El plugin apagado apaga el servicio").
+      { method: 'ANY', path: '/warehouses/*', service: 'inventory-service', stripPrefix: '', requiresPlugin: 'inventory.warehouses' },
+      { method: 'ANY', path: '/stock/*', service: 'inventory-service', stripPrefix: '', requiresPlugin: 'inventory.kardex' },
 
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 

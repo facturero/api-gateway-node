@@ -15,6 +15,7 @@ const envSchema = z.object({
   ORG_SERVICE_URL: z.string().url().optional(),
   CUSTOMER_SERVICE_URL: z.string().url().optional(),
   PRODUCT_SERVICE_URL: z.string().url().optional(),
+  INVENTORY_SERVICE_URL: z.string().url().optional(),
   TAX_SERVICE_URL: z.string().url().optional(),
   BILLING_SERVICE_URL: z.string().url().optional(),
   FISCAL_SERVICE_URL: z.string().url().optional(),
@@ -23,6 +24,7 @@ const envSchema = z.object({
   STORE_SERVICE_URL: z.string().url().optional(),
   NOTIFICATION_SERVICE_URL: z.string().url().optional(),
   AUDIT_LOG_SERVICE_URL: z.string().url().optional(),
+  ASSISTANT_SERVICE_URL: z.string().url().optional(),
 
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
 

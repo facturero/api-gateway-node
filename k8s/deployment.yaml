@@ -41,6 +41,8 @@ spec:
               value: "http://customer-service-node:3004"
             - name: PRODUCT_SERVICE_URL
               value: "http://product-service-node:3006"
+            - name: INVENTORY_SERVICE_URL
+              value: "http://inventory-service:3013"
             - name: TAX_SERVICE_URL
               value: "http://tax-service:3005"
             - name: DOCUMENT_SERVICE_URL

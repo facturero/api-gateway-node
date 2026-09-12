@@ -73,6 +73,17 @@ export function createRealtimeHub(options: RealtimeHubOptions): SocketServer {
 
     socket.data.organizationId = orgId;
     socket.data.subjectId = (result.claims?.sub as string | undefined) ?? null;
+    // El asistente necesita el Bearer original: lo reutiliza para volver a
+    // llamar al API en nombre del usuario (req.user del assistant-service).
+    socket.data.bearerToken = token;
+    // Locale de la mano del cliente; sin él el asistente respondería siempre en
+    // el idioma por defecto. En el handshake del socket va en `auth` (los
+    // headers no se pueden fijar desde el navegador); el header es el fallback
+    // para clientes no-navegador.
+    socket.data.locale =
+      (socket.handshake.auth as { locale?: string } | undefined)?.locale?.split(',')[0]?.trim() ||
+      socket.handshake.headers['accept-language']?.split(',')[0]?.trim() ||
+      'es';
     return next();
   });
 

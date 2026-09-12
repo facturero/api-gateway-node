@@ -6,6 +6,7 @@ import { loadEnv } from './config/env';
 import { buildGatewayConfig } from './config/gateway.config';
 import { createGateway } from './core/create-gateway';
 import { createRealtimeHub } from './realtime/hub';
+import { registerAssistantSocket } from './realtime/assistant-socket';
 import { HttpNotificationGate } from './realtime/notification-gate';
 
 const env = loadEnv();
@@ -18,7 +19,7 @@ config.rateLimit?.trustedIpCache?.start().catch(() => {});
 // El server HTTP lo creamos nosotros para montar socket.io (/ws) sobre él.
 // El hub autentica con el mismo JWT y reenvía eventos de catálogo por org.
 const httpServer = createAdaptorServer({ fetch: app.fetch }) as HttpServer;
-createRealtimeHub({
+const io = createRealtimeHub({
   httpServer,
   authenticator: config.authenticator,
   rabbitmqUrl: env.RABBITMQ_URL,
@@ -39,6 +40,13 @@ createRealtimeHub({
     ? new HttpNotificationGate(env.NOTIFICATION_SERVICE_URL)
     : undefined,
 });
+
+// Canal del asistente por WebSocket: los turnos largos del LLM (más de 30s)
+// morían con 502 porque Cloudflare Tunnel bufferiza las respuestas HTTP. El
+// socket no pasa por ese buffer, así que aquí se cuelga el assistant-service.
+// Como creamos el hub en main.ts y el módulo necesita el `io`, se registra tras
+// crear el hub en vez de dentro de él.
+registerAssistantSocket(io, { assistantServiceUrl: env.ASSISTANT_SERVICE_URL });
 
 httpServer.listen(env.PORT, () => {
   console.log(`Gateway escuchando en http://localhost:${env.PORT}`);

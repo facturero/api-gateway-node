@@ -55,6 +55,11 @@ spec:
               value: "http://audit-log-service-node:3012"
             - name: STORE_SERVICE_URL
               value: "http://minio:9000"
+            # Sin esta variable el gateway NO registra la ruta /assistant/*: el
+            # asistente responde 404 aunque su pod esté sano. El servicio se
+            # llama así en k8s (ver assistant-service/k8s/service.yaml).
+            - name: ASSISTANT_SERVICE_URL
+              value: "http://assistant-service:3014"
             # Sin RABBITMQ_URL el hub de /ws acepta sockets pero nunca arranca el
             # consumidor de crm.events: no hay campana, ni plugins.changed, ni
             # permissions.changed. El secret lo crea el operador (no el workflow).

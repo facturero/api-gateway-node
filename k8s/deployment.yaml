@@ -55,6 +55,13 @@ spec:
               value: "http://audit-log-service-node:3012"
             - name: STORE_SERVICE_URL
               value: "http://minio:9000"
+            # Sin estas dos el gateway no registra billing-service ni
+            # fiscal-ecuador, y /invoices/* y /fiscal-invoices/* responden 500
+            # SERVICE_NOT_FOUND. Los nombres salen de sus k8s/service.yaml.
+            - name: BILLING_SERVICE_URL
+              value: "http://billing-service:3009"
+            - name: FISCAL_SERVICE_URL
+              value: "http://fiscal-ecuador-node:3010"
             # Sin esta variable el gateway NO registra la ruta /assistant/*: el
             # asistente responde 404 aunque su pod esté sano. El servicio se
             # llama así en k8s (ver assistant-service/k8s/service.yaml).

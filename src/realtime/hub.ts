@@ -25,7 +25,7 @@ const USER_ROOM_PREFIX = 'user:';
 //        viejo y el gateway responderá 401 TOKEN_STALE hasta que re-autentique
 //        (BUG #9). Los identity.* que también son providers de notificaciones
 //        emiten además `notification` (campana), si el canal `app` está activo.
-//      * billing.invoice.#            -> `notification` a `user:<uid>` (factura
+//      * billing.invoice.# y fiscal.ec.invoice.attention_required -> `notification` a `user:<uid>` (factura
 //        emitida/anulada), gateado por el canal `app` igual que identity.*.
 export interface RealtimeHubOptions {
   httpServer: HttpServer;
@@ -133,6 +133,7 @@ async function startRealtimeConsumer(
       await channel.bindQueue(queue, EXCHANGE, 'plugin.#');
       await channel.bindQueue(queue, EXCHANGE, 'identity.#');
       await channel.bindQueue(queue, EXCHANGE, 'billing.invoice.#');
+      await channel.bindQueue(queue, EXCHANGE, 'fiscal.ec.invoice.attention_required');
 
       channel.consume(queue, (msg: ConsumeMessage | null) => {
         if (!msg) return;
@@ -142,7 +143,7 @@ async function startRealtimeConsumer(
         });
       });
 
-      console.log('[realtime] consumidor crm.events activo (product.product.*, organization.billing_point.*, plugin.*, identity.*, billing.invoice.*)');
+      console.log('[realtime] consumidor crm.events activo (product.product.*, organization.billing_point.*, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required)');
     } catch (err) {
       console.error('[realtime] no se pudo conectar a RabbitMQ, reintentando en 5s:', err);
       setTimeout(connectLoop, 5_000);
@@ -192,9 +193,13 @@ async function handleRealtimeMessage(
   const routingKey = msg.fields.routingKey;
   const payload = JSON.parse(msg.content.toString()) as Record<string, unknown>;
 
-  // Notificaciones de facturación: `billing.invoice.issued/voided` son providers
-  // de notificación (plugin finance.electronic_invoicing). Sin gate no hay campana.
-  if (routingKey.startsWith('billing.invoice.')) {
+  // Notificaciones de facturación: `billing.invoice.issued/voided` y
+  // `fiscal.ec.invoice.attention_required` (una factura rechazada o atascada
+  // ante el SRI) son providers de notificación del plugin
+  // finance.electronic_invoicing. Sin gate no hay campana. Del resto de
+  // `fiscal.ec.invoice.*` no se avisa: son cambios de estado normales o errores
+  // que se reintentan solos.
+  if (routingKey.startsWith('billing.invoice.') || routingKey === 'fiscal.ec.invoice.attention_required') {
     const userIds = extractUserIds(payload);
     if (!notificationGate || userIds.length === 0) {
       channel.ack(msg);

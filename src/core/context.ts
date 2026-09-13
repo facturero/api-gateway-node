@@ -17,6 +17,15 @@ export function buildContextHeaders(
   return headers;
 }
 
+/**
+ * Cabeceras que solo pueden venir de dentro del clúster. Un cliente que las
+ * mande a través del gateway se hace pasar por un servicio: con
+ * `X-Internal-Secret` (cuyo valor de desarrollo está en el repo) cualquier
+ * usuario autenticado leía por `/files/:id/content` el .p12 de otra
+ * organización. Comprobado contra el docker-compose el 2026-09-13.
+ */
+export const INTERNAL_ONLY_HEADERS = ['x-internal-secret'];
+
 export function deriveSpoofHeaders(mappings: ClaimHeaderMapping[]): string[] {
-  return mappings.map((m) => m.header.toLowerCase());
+  return [...mappings.map((m) => m.header.toLowerCase()), ...INTERNAL_ONLY_HEADERS];
 }

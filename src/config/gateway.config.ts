@@ -154,7 +154,9 @@ export function buildGatewayConfig(): GatewayConfig {
 
       { method: 'ANY', path: '/countries/*', service: 'tax-service', stripPrefix: '' },
 
-      { method: 'GET', path: '/files/:id/download', service: 'document-service', stripPrefix: '', public: true },
+      // Ya no es pública (FACTURACION-BRECHAS.md, N13): con solo el id cualquiera
+      // obtenía un enlace a cualquier archivo. La interfaz pide GET /files/:id/url
+      // con su token; document-service acota a la organización.
       { method: 'ANY', path: '/files/*', service: 'document-service', stripPrefix: '' },
 
       // MinIO/S3 object store — la URL presigned firmada usa el bucket en el path (path-style),

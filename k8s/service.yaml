@@ -6,6 +6,14 @@ metadata:
     app: api-gateway-node
 spec:
   type: NodePort
+  # Con Cluster (default) kube-proxy hace SNAT: el pod del gateway ve la IP
+  # del NODO (192.168.100.149), no la del cliente (p. ej. 192.168.100.229 del
+  # generador). Como la IP del nodo NUNCA está en RATE_LIMIT_TRUSTED_IPS, el
+  # middleware aplicaba el límite normal 120 → 429 por encima de ~10 RPS aun
+  # con el generador "trusteado". Con Local (clúster de 1 nodo, sin costo) el
+  # pod ve la IP real del cliente, que SÍ está trusteada → el ladder mide el
+  # techo real de billing sin 429 espurios por el middleware.
+  externalTrafficPolicy: Local
   selector:
     app: api-gateway-node
   ports:

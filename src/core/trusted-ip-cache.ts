@@ -55,10 +55,13 @@ export class TrustedIpCache {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as TrustedIpEntry[];
       const fetched = data.map((e) => e.ip);
-      // Una lista vacía en auth-service (nadie configuró trusted-ips todavía)
-      // no debe apagar el fallback de red interna (Docker) — si lo hiciera,
-      // RATE_LIMIT_TRUSTED_IPS quedaría muerto en cualquier instalación nueva.
-      this.ips = fetched.length > 0 ? fetched : this.fallbackIps;
+      // Unión en lugar de reemplazo: la lista de DB de auth-service NO debe
+      // pisar el fallback de env (RATE_LIMIT_TRUSTED_IPS). Si la DB devuelve
+      // una lista que no incluye una IP del env (p. ej. la del generador de
+      // stress), reemplazar la dejaba fuera y el rate-limit volvía a 429
+      // contra ella incluso estando configurada para siempre en el env.
+      // Dedupe conservando el orden: primero lo de la DB, luego el fallback.
+      this.ips = [...new Set([...fetched, ...this.fallbackIps])];
       console.log(
         `[trusted-ip-cache] ${fetched.length} IPs cargadas desde auth-service` +
           (fetched.length === 0 ? ` (usando fallback: ${this.fallbackIps.length} IPs)` : ''),

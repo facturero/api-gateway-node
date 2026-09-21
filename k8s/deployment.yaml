@@ -89,13 +89,7 @@ spec:
               value: "192.168.100.229"
             - name: RATE_LIMIT_TRUSTED_MAX
               value: "100000"
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "500m"
-            limits:
-              memory: "4Gi"
-              cpu: "4000m"
+          resources: {}
           livenessProbe:
             httpGet:
               path: /health

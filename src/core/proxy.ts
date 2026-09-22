@@ -151,32 +151,52 @@ export async function proxyRequest(
   // undici (Node.js fetch) no soporta ciertos headers del cliente original
   downstreamHeaders.delete('expect');
 
-  // Sin esto, un fetch() colgado (p.ej. un socket keep-alive reusado justo
-  // cuando el servidor downstream lo cerraba por idle - carrera clasica entre
-  // el keepAliveTimeout de @hono/node-server, 5s por defecto, y el pool de
-  // undici) esperaba PARA SIEMPRE: sin error, sin log, nada - el cliente solo
-  // veia su propio timeout (p.ej. los 10s de k6 en stress-petitions).
-  // Medido: golpeando billing-service directo (sin este proxy) respondia en
-  // 66ms; la misma peticion via este proxy se colgaba de forma indefinida.
-  // DOWNSTREAM_TIMEOUT_MS deliberadamente mas holgado que timeouts tipicos de
-  // cliente (10-15s): el objetivo es que el gateway deje de trabarse para
-  // siempre, no imponer un SLA nuevo mas estricto que el que ya tenia.
+  const downstreamReq = new Request(targetUrlStr, init);
+
+  // DOWNSTREAM_TIMEOUT_MS: red de seguridad para que el gateway deje de
+  // trabarse para siempre si el downstream no responde (ver historia larga
+  // en git log de este archivo). Ojo: a proposito NO se implementa con un
+  // AbortSignal pasado al fetch. Abortar el fetch mientras esta en vuelo
+  // deja el socket subyacente de undici en un estado que no siempre se
+  // libera al pool de conexiones - medido en vivo: bajo carga real (25 rps
+  // sostenidos vía stress-petitions/billing) ESTABLISHED en /proc/net/tcp
+  // del pod crecia sin bajar nunca, aun con el AbortSignal puesto y aun
+  // bufferizando el body de las respuestas EXITOSAS (fix anterior). El
+  // patron de abajo no cancela nada: si el timeout gana la carrera, la
+  // fetch original sigue viva en el fondo y se le consume el body entero
+  // apenas resuelva (exito o no), garantizando que el socket se libere -
+  // el cliente ya recibio su 504 y no espera esa segunda resolucion.
+  const fetchPromise = fetch(downstreamReq);
   const timeoutMs = Number(process.env.DOWNSTREAM_TIMEOUT_MS) || 20_000;
-  const downstreamReq = new Request(targetUrlStr, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  const TIMEOUT = Symbol('timeout');
+  let resolveTimeout: (v: typeof TIMEOUT) => void;
+  const timeoutPromise = new Promise<typeof TIMEOUT>((resolve) => {
+    resolveTimeout = resolve;
+  });
+  const timer = setTimeout(() => resolveTimeout(TIMEOUT), timeoutMs);
 
   try {
-    const response = await fetch(downstreamReq);
+    const winner = await Promise.race([fetchPromise, timeoutPromise]);
+    clearTimeout(timer);
+
+    if (winner === TIMEOUT) {
+      log('Proxy timeout:', targetUrlStr);
+      // Drenar en el fondo lo que sea que termine llegando, para liberar el
+      // socket - sin esto se repite la misma fuga que con AbortSignal.
+      fetchPromise.then((r) => r.arrayBuffer()).catch(() => undefined);
+      return c.json(
+        errorBody('DOWNSTREAM_TIMEOUT', 'El servicio downstream no respondió a tiempo'),
+        504,
+      );
+    }
+
+    const response = winner;
     // Bufferear el body en vez de reenviar response.body (el ReadableStream
     // crudo de undici): undici NO libera el socket downstream al pool de
     // conexiones hasta que el body se consume por completo. Reenviar el
     // stream tal cual deja esa liberacion en manos de que Hono/el resto del
     // middleware (p.ej. el rate-limit, que hace c.res.headers.set(...)
     // DESPUES de next()) lo drene correctamente - y no siempre lo hacia.
-    // Medido: ESTABLISHED en /proc/net/tcp del pod crecia 1 a 1 con cada
-    // request (33 -> 1609 en 56s bajo 25 rps) sin bajar nunca - una fuga de
-    // conexiones/file descriptors, no un techo de concurrencia real. Las
-    // respuestas de esta API son JSON chico, asi que bufferear entero no
-    // tiene costo relevante.
     const bodyBuffer = await response.arrayBuffer();
     return new Response(bodyBuffer, {
       status: response.status,
@@ -184,13 +204,7 @@ export async function proxyRequest(
       headers: sanitizeResponseHeaders(response.headers),
     });
   } catch (err) {
-    if (err instanceof Error && err.name === 'TimeoutError') {
-      log('Proxy timeout:', targetUrlStr);
-      return c.json(
-        errorBody('DOWNSTREAM_TIMEOUT', 'El servicio downstream no respondió a tiempo'),
-        504,
-      );
-    }
+    clearTimeout(timer);
     log('Proxy error:', err);
     return c.json(
       errorBody('DOWNSTREAM_ERROR', 'Error al conectar con el servicio downstream'),

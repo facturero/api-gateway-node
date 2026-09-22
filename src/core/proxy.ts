@@ -3,9 +3,29 @@ import type { RouteRule, ServiceConfig } from './types';
 import { errorBody } from './errors';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import { Agent } from 'undici';
 
 // eslint-disable-next-line no-console
 const log = console.error.bind(console, '[proxy]');
+
+// Agent unico y compartido para el fetch() del proxy hacia los servicios
+// downstream. Sin esto, fetch() usa el dispatcher global de undici tal cual
+// - y en la practica el pod terminaba abriendo una conexion TCP nueva por
+// cada peticion en vez de reusar: bajo carga sostenida real (25 rps durante
+// varios minutos via stress-petitions/billing, no en rafagas cortas) los
+// sockets en TIME_WAIT (que Linux tarda ~60s en liberar) se acumulaban mas
+// rapido de lo que se liberaban - medido en /proc/net/tcp del pod, hasta
+// 1500+ sockets simultaneos - y el proceso terminaba sin file descriptors
+// disponibles. `connections` acota cuantos sockets simultaneos por origen
+// puede abrir el pool (backpressure real en vez de crecimiento sin techo);
+// `keepAliveTimeout`/`keepAliveMaxTimeout` generosos para que de verdad se
+// reusen entre peticiones seguidas en vez de cerrarse por estar unos pocos
+// segundos idle.
+const downstreamAgent = new Agent({
+  connections: 64,
+  keepAliveTimeout: 30_000,
+  keepAliveMaxTimeout: 60_000,
+});
 
 const HOP_BY_HOP_HEADERS = [
   'connection',
@@ -166,7 +186,14 @@ export async function proxyRequest(
   // fetch original sigue viva en el fondo y se le consume el body entero
   // apenas resuelva (exito o no), garantizando que el socket se libere -
   // el cliente ya recibio su 504 y no espera esa segunda resolucion.
-  const fetchPromise = fetch(downstreamReq);
+  // dispatcher va en el segundo argumento de fetch(), no en el Request: es
+  // una extension de Node/undici sobre RequestInit, y el Request ya
+  // construido no la conserva.
+  // El cast pasa por `unknown`: @types/node trae su propio undici-types
+  // (bundled) que TS considera un tipo distinto del paquete standalone
+  // `undici` que se instalo aca, aunque sean estructuralmente el mismo
+  // Agent en runtime.
+  const fetchPromise = fetch(downstreamReq, { dispatcher: downstreamAgent } as unknown as RequestInit);
   const timeoutMs = Number(process.env.DOWNSTREAM_TIMEOUT_MS) || 20_000;
   const TIMEOUT = Symbol('timeout');
   let resolveTimeout: (v: typeof TIMEOUT) => void;

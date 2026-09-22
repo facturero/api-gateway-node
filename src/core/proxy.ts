@@ -118,6 +118,10 @@ export async function proxyRequest(
   spoofHeaders: string[],
   requestId: string,
 ): Promise<Response> {
+  // DIAG TEMPORAL: instrumentacion de tiempo para encontrar donde se pierde
+  // el tiempo bajo concurrencia real (quitar despues de diagnosticar).
+  const tEnter = Date.now();
+  log('DIAG enter', requestId, new Date(tEnter).toISOString());
   const service = services.find((s) => s.name === rule.service);
   if (!service) {
     return c.json(errorBody('SERVICE_NOT_FOUND', `Servicio '${rule.service}' no configurado`), 500);
@@ -205,7 +209,14 @@ export async function proxyRequest(
   // (bundled) que TS considera un tipo distinto del paquete standalone
   // `undici` que se instalo aca, aunque sean estructuralmente el mismo
   // Agent en runtime.
+  // DIAG TEMPORAL
+  log('DIAG pre-fetch', requestId, 'gap_ms=', Date.now() - tEnter);
+  const tFetchStart = Date.now();
   const fetchPromise = fetch(targetUrlStr, { ...init, dispatcher: downstreamAgent } as unknown as RequestInit);
+  fetchPromise.then(
+    () => log('DIAG fetch resolved', requestId, 'fetch_ms=', Date.now() - tFetchStart),
+    (e) => log('DIAG fetch rejected', requestId, 'fetch_ms=', Date.now() - tFetchStart, String(e)),
+  );
   const timeoutMs = Number(process.env.DOWNSTREAM_TIMEOUT_MS) || 20_000;
   const TIMEOUT = Symbol('timeout');
   let resolveTimeout: (v: typeof TIMEOUT) => void;

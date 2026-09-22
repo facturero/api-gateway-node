@@ -154,10 +154,18 @@ export async function proxyRequest(
 
   downstreamHeaders.set('X-Request-Id', requestId);
 
-  // Reenviar el body como buffer para preservar Content-Length de forma determinista
-  // (MinIO/la firma SigV4 del presigned exige Content-Length; un stream devuelve chunked sin él).
+  // Reenviar el body como buffer (no como stream) para que el proxy pueda
+  // reintentar/leer sin depender de un stream que ya se consumio.
+  // Content-Length se lo dejamos calcular a undici a partir del body: con
+  // el Agent dedicado (mas estricto que el fetch global de Node en esto),
+  // setearlo a mano aca causaba "InvalidArgumentError: invalid content-length
+  // header" - el body ya viene como Content-Length correcto de por si desde
+  // el cliente original, y duplicar el calculo no aportaba nada en este
+  // codepath (a diferencia de proxyRawS3/MinIO, que si lo necesita para el
+  // SigV4 y esta en otra funcion, sin tocar).
   const hasBody = c.req.method !== 'GET' && c.req.method !== 'HEAD';
   const body = hasBody ? await c.req.raw.arrayBuffer() : null;
+  downstreamHeaders.delete('content-length');
   const init: RequestInit = {
     method: c.req.method,
     headers: downstreamHeaders,
@@ -165,7 +173,6 @@ export async function proxyRequest(
   };
   if (body) {
     init.body = new Uint8Array(body);
-    downstreamHeaders.set('Content-Length', String(body.byteLength));
   }
 
   // undici (Node.js fetch) no soporta ciertos headers del cliente original

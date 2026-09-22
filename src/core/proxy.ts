@@ -166,7 +166,19 @@ export async function proxyRequest(
 
   try {
     const response = await fetch(downstreamReq);
-    return new Response(response.body, {
+    // Bufferear el body en vez de reenviar response.body (el ReadableStream
+    // crudo de undici): undici NO libera el socket downstream al pool de
+    // conexiones hasta que el body se consume por completo. Reenviar el
+    // stream tal cual deja esa liberacion en manos de que Hono/el resto del
+    // middleware (p.ej. el rate-limit, que hace c.res.headers.set(...)
+    // DESPUES de next()) lo drene correctamente - y no siempre lo hacia.
+    // Medido: ESTABLISHED en /proc/net/tcp del pod crecia 1 a 1 con cada
+    // request (33 -> 1609 en 56s bajo 25 rps) sin bajar nunca - una fuga de
+    // conexiones/file descriptors, no un techo de concurrencia real. Las
+    // respuestas de esta API son JSON chico, asi que bufferear entero no
+    // tiene costo relevante.
+    const bodyBuffer = await response.arrayBuffer();
+    return new Response(bodyBuffer, {
       status: response.status,
       statusText: response.statusText,
       headers: sanitizeResponseHeaders(response.headers),

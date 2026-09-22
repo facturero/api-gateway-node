@@ -151,7 +151,18 @@ export async function proxyRequest(
   // undici (Node.js fetch) no soporta ciertos headers del cliente original
   downstreamHeaders.delete('expect');
 
-  const downstreamReq = new Request(targetUrlStr, init);
+  // Sin esto, un fetch() colgado (p.ej. un socket keep-alive reusado justo
+  // cuando el servidor downstream lo cerraba por idle - carrera clasica entre
+  // el keepAliveTimeout de @hono/node-server, 5s por defecto, y el pool de
+  // undici) esperaba PARA SIEMPRE: sin error, sin log, nada - el cliente solo
+  // veia su propio timeout (p.ej. los 10s de k6 en stress-petitions).
+  // Medido: golpeando billing-service directo (sin este proxy) respondia en
+  // 66ms; la misma peticion via este proxy se colgaba de forma indefinida.
+  // DOWNSTREAM_TIMEOUT_MS deliberadamente mas holgado que timeouts tipicos de
+  // cliente (10-15s): el objetivo es que el gateway deje de trabarse para
+  // siempre, no imponer un SLA nuevo mas estricto que el que ya tenia.
+  const timeoutMs = Number(process.env.DOWNSTREAM_TIMEOUT_MS) || 20_000;
+  const downstreamReq = new Request(targetUrlStr, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 
   try {
     const response = await fetch(downstreamReq);
@@ -161,6 +172,13 @@ export async function proxyRequest(
       headers: sanitizeResponseHeaders(response.headers),
     });
   } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      log('Proxy timeout:', targetUrlStr);
+      return c.json(
+        errorBody('DOWNSTREAM_TIMEOUT', 'El servicio downstream no respondió a tiempo'),
+        504,
+      );
+    }
     log('Proxy error:', err);
     return c.json(
       errorBody('DOWNSTREAM_ERROR', 'Error al conectar con el servicio downstream'),

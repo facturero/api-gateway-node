@@ -178,8 +178,6 @@ export async function proxyRequest(
   // undici (Node.js fetch) no soporta ciertos headers del cliente original
   downstreamHeaders.delete('expect');
 
-  const downstreamReq = new Request(targetUrlStr, init);
-
   // DOWNSTREAM_TIMEOUT_MS: red de seguridad para que el gateway deje de
   // trabarse para siempre si el downstream no responde (ver historia larga
   // en git log de este archivo). Ojo: a proposito NO se implementa con un
@@ -193,14 +191,21 @@ export async function proxyRequest(
   // fetch original sigue viva en el fondo y se le consume el body entero
   // apenas resuelva (exito o no), garantizando que el socket se libere -
   // el cliente ya recibio su 504 y no espera esa segunda resolucion.
-  // dispatcher va en el segundo argumento de fetch(), no en el Request: es
-  // una extension de Node/undici sobre RequestInit, y el Request ya
-  // construido no la conserva.
+  // OJO: fetch(new Request(url, init), otroInit) NO respeta `dispatcher` en
+  // ese segundo argumento - un Request ya construido encapsula sus propias
+  // opciones y Node/undici ignora silenciosamente el dispatcher del otro
+  // init. Por eso antes el Agent con connections:64 nunca se aplicaba de
+  // verdad: bajo rafagas de concurrencia real (80 peticiones simultaneas,
+  // incluso ya con este Agent "puesto") las 80 seguian tardando ~20s cada
+  // una, exactamente igual que golpeando directo con fetch() global -
+  // mientras que las mismas 80 directo a billing-service (sin este proxy)
+  // respondian en <150ms. Pasando la URL + init (con dispatcher adentro)
+  // directo a fetch(), sin construir un Request intermedio, si se respeta.
   // El cast pasa por `unknown`: @types/node trae su propio undici-types
   // (bundled) que TS considera un tipo distinto del paquete standalone
   // `undici` que se instalo aca, aunque sean estructuralmente el mismo
   // Agent en runtime.
-  const fetchPromise = fetch(downstreamReq, { dispatcher: downstreamAgent } as unknown as RequestInit);
+  const fetchPromise = fetch(targetUrlStr, { ...init, dispatcher: downstreamAgent } as unknown as RequestInit);
   const timeoutMs = Number(process.env.DOWNSTREAM_TIMEOUT_MS) || 20_000;
   const TIMEOUT = Symbol('timeout');
   let resolveTimeout: (v: typeof TIMEOUT) => void;

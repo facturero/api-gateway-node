@@ -8,6 +8,19 @@ import { proxyRequest } from './proxy';
 import { errorBody } from './errors';
 import { InMemoryRateLimitStore } from './rate-limit';
 
+// DIAG TEMPORAL: sin console.log por peticion (eso ya causo bloqueo del
+// event loop una vez) - se acumula en memoria y se vacia una linea de
+// resumen cada 5s.
+const diagAuthMs: number[] = [];
+setInterval(() => {
+  if (diagAuthMs.length === 0) return;
+  const sorted = [...diagAuthMs].sort((a, b) => a - b);
+  diagAuthMs.length = 0;
+  const p = (q: number) => sorted[Math.floor(sorted.length * q)];
+  // eslint-disable-next-line no-console
+  console.error(`[diag-auth] n=${sorted.length} p50=${p(0.5)} p90=${p(0.9)} p99=${p(0.99)} max=${sorted[sorted.length - 1]}`);
+}, 5000);
+
 function clientIp(c: any): string {
   // x-forwarded-for/cf-connecting-ip solo existen detrás de un proxy externo
   // (Cloudflare, LB). Sin ellos, toda petición directa (dev/tests locales)
@@ -168,9 +181,11 @@ function createRouteHandler(
     let claims: Record<string, unknown> | undefined;
 
     if (!rule.public) {
+      const tAuthStart = Date.now();
       const authResult = await config.authenticator.authenticate(
         (name: string) => c.req.header(name),
       );
+      diagAuthMs.push(Date.now() - tAuthStart);
       if (!authResult.authenticated) {
         return c.json(
           errorBody('UNAUTHORIZED', authResult.error ?? 'Token inválido o ausente'),

@@ -16,13 +16,27 @@ const log = console.error.bind(console, '[proxy]');
 // sockets en TIME_WAIT (que Linux tarda ~60s en liberar) se acumulaban mas
 // rapido de lo que se liberaban - medido en /proc/net/tcp del pod, hasta
 // 1500+ sockets simultaneos - y el proceso terminaba sin file descriptors
-// disponibles. `connections` acota cuantos sockets simultaneos por origen
-// puede abrir el pool (backpressure real en vez de crecimiento sin techo);
+// disponibles. `connections` acota cuantos sockets simultaneos POR ORIGEN
+// (cada servicio downstream tiene su propio pool bajo este mismo Agent)
+// puede abrir el pool - backpressure real en vez de crecimiento sin techo.
+//
+// El valor 64 original resulto ser el cuello de botella el mismo, no una
+// proteccion: con 150 peticiones simultaneas contra billing-service, las
+// 150 terminaron en el timeout del proxy (504 a los ~20s) SIN que MySQL
+// (Innodb_row_lock_current_waits, data_lock_waits, innodb_trx activas: 0
+// en cada muestra, antes/durante/despues) ni billing-service (CPU nunca
+// pasando de ~45m, contra un pod sin limite) mostraran ninguna carga
+// medible - es decir, la mayoria de esas 150 ni llegaban a golpear al
+// servicio: se quedaban en cola en este Agent. Ya se confirmo por separado
+// que billing-service atiende 80+ peticiones simultaneas DIRECTAS (sin
+// este proxy) en <150ms, asi que 64 era demasiado bajo para el trafico
+// real que se le pide pasar. DOWNSTREAM_MAX_CONNECTIONS permite ajustarlo
+// sin tocar codigo si hiciera falta subirlo o bajarlo de nuevo.
 // `keepAliveTimeout`/`keepAliveMaxTimeout` generosos para que de verdad se
 // reusen entre peticiones seguidas en vez de cerrarse por estar unos pocos
 // segundos idle.
 const downstreamAgent = new Agent({
-  connections: 64,
+  connections: Number(process.env.DOWNSTREAM_MAX_CONNECTIONS) || 512,
   keepAliveTimeout: 30_000,
   keepAliveMaxTimeout: 60_000,
 });

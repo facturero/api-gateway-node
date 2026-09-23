@@ -8,23 +8,6 @@ import { Agent } from 'undici';
 // eslint-disable-next-line no-console
 const log = console.error.bind(console, '[proxy]');
 
-// DIAG TEMPORAL: sin console.log por peticion. Se acumula en memoria y se
-// vacia un resumen cada 5s (mismo patron que create-gateway.ts).
-const diagReadBodyMs: number[] = [];
-const diagFetchMs: number[] = [];
-setInterval(() => {
-  for (const [name, arr] of [
-    ['diag-read-body', diagReadBodyMs],
-    ['diag-fetch', diagFetchMs],
-  ] as const) {
-    if (arr.length === 0) continue;
-    const sorted = [...arr].sort((a, b) => a - b);
-    arr.length = 0;
-    const p = (q: number) => sorted[Math.floor(sorted.length * q)];
-    log(`[${name}] n=${sorted.length} p50=${p(0.5)} p90=${p(0.9)} p99=${p(0.99)} max=${sorted[sorted.length - 1]}`);
-  }
-}, 5000);
-
 // Agent unico y compartido para el fetch() del proxy hacia los servicios
 // downstream. Sin esto, fetch() usa el dispatcher global de undici tal cual
 // - y en la practica el pod terminaba abriendo una conexion TCP nueva por
@@ -195,9 +178,7 @@ export async function proxyRequest(
   // codepath (a diferencia de proxyRawS3/MinIO, que si lo necesita para el
   // SigV4 y esta en otra funcion, sin tocar).
   const hasBody = c.req.method !== 'GET' && c.req.method !== 'HEAD';
-  const tBodyStart = Date.now();
   const body = hasBody ? await c.req.raw.arrayBuffer() : null;
-  diagReadBodyMs.push(Date.now() - tBodyStart);
   downstreamHeaders.delete('content-length');
   const init: RequestInit = {
     method: c.req.method,
@@ -238,12 +219,7 @@ export async function proxyRequest(
   // (bundled) que TS considera un tipo distinto del paquete standalone
   // `undici` que se instalo aca, aunque sean estructuralmente el mismo
   // Agent en runtime.
-  const tFetchStart = Date.now();
   const fetchPromise = fetch(targetUrlStr, { ...init, dispatcher: downstreamAgent } as unknown as RequestInit);
-  fetchPromise.then(
-    () => diagFetchMs.push(Date.now() - tFetchStart),
-    () => diagFetchMs.push(Date.now() - tFetchStart),
-  );
   const timeoutMs = Number(process.env.DOWNSTREAM_TIMEOUT_MS) || 20_000;
   const TIMEOUT = Symbol('timeout');
   let resolveTimeout: (v: typeof TIMEOUT) => void;

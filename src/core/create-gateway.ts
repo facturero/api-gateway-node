@@ -12,13 +12,27 @@ import { InMemoryRateLimitStore } from './rate-limit';
 // event loop una vez) - se acumula en memoria y se vacia una linea de
 // resumen cada 5s.
 const diagAuthMs: number[] = [];
-setInterval(() => {
-  if (diagAuthMs.length === 0) return;
-  const sorted = [...diagAuthMs].sort((a, b) => a - b);
-  diagAuthMs.length = 0;
+const diagPvMs: number[] = [];
+const diagPluginMs: number[] = [];
+const diagEntryToProxyMs: number[] = [];
+function diagSummary(name: string, arr: number[]): string | null {
+  if (arr.length === 0) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  arr.length = 0;
   const p = (q: number) => sorted[Math.floor(sorted.length * q)];
-  // eslint-disable-next-line no-console
-  console.error(`[diag-auth] n=${sorted.length} p50=${p(0.5)} p90=${p(0.9)} p99=${p(0.99)} max=${sorted[sorted.length - 1]}`);
+  return `[${name}] n=${sorted.length} p50=${p(0.5)} p90=${p(0.9)} p99=${p(0.99)} max=${sorted[sorted.length - 1]}`;
+}
+setInterval(() => {
+  for (const [name, arr] of [
+    ['diag-auth', diagAuthMs],
+    ['diag-pv', diagPvMs],
+    ['diag-plugin', diagPluginMs],
+    ['diag-entry-to-proxy', diagEntryToProxyMs],
+  ] as const) {
+    const line = diagSummary(name, arr);
+    // eslint-disable-next-line no-console
+    if (line) console.error(line);
+  }
 }, 5000);
 
 function clientIp(c: any): string {
@@ -163,6 +177,7 @@ function createRouteHandler(
   rateLimitStore: RateLimitStore,
 ) {
   return async (c: any) => {
+    const tEntry = Date.now();
     // ── Rate limit propio de la ruta (además del global) ──
     if (rule.rateLimit) {
       const key = `${rule.method}:${rule.path}:${clientIp(c)}`;
@@ -208,6 +223,7 @@ function createRouteHandler(
     // el pv cacheado (viejo) → falso TOKEN_STALE → logout. Antes de rechazar,
     // se reconfirma contra auth-service sin caché; solo se rechaza si el valor
     // fresco realmente no coincide.
+    const tPvStart = Date.now();
     if (claims && config.permissionsCache) {
       const sub = claims?.sub as string | undefined;
       const pvClaim = claims?.pv as number | undefined;
@@ -230,11 +246,13 @@ function createRouteHandler(
         }
       }
     }
+    diagPvMs.push(Date.now() - tPvStart);
 
     // ── Gate por plugins ──
     // La ruta pertenece a un módulo vendible: la organización debe tenerlo
     // activo. Se evalúa después de autenticar, para no filtrar qué módulos
     // tiene contratada una organización a quien no ha iniciado sesión.
+    const tPluginStart = Date.now();
     if (rule.requiresPlugin && config.pluginGate) {
       const organizationId = claims?.[config.pluginGate.organizationClaim] as string | undefined;
       if (!organizationId) {
@@ -245,6 +263,7 @@ function createRouteHandler(
       }
       try {
         const active = await config.pluginGate.cache.isActive(organizationId, rule.requiresPlugin);
+        diagPluginMs.push(Date.now() - tPluginStart);
         if (!active) {
           return c.json(
             errorBody(
@@ -255,6 +274,7 @@ function createRouteHandler(
           );
         }
       } catch {
+        diagPluginMs.push(Date.now() - tPluginStart);
         return c.json(
           errorBody(
             'PLUGIN_CHECK_UNAVAILABLE',
@@ -263,6 +283,8 @@ function createRouteHandler(
           503,
         );
       }
+    } else {
+      diagPluginMs.push(Date.now() - tPluginStart);
     }
 
     // ── Gate por permisos ──
@@ -292,6 +314,7 @@ function createRouteHandler(
     contextHeaders['X-Client-Ip'] = clientIp(c);
     const requestId = (c as any).get('requestId') as string;
 
+    diagEntryToProxyMs.push(Date.now() - tEntry);
     return proxyRequest(c, rule, config.services, contextHeaders, spoofHeaders, requestId);
   };
 }

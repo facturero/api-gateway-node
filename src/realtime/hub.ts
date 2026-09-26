@@ -17,6 +17,8 @@ const USER_ROOM_PREFIX = 'user:';
 //        hace un pull autenticado; aquí nunca va el catálogo completo).
 //      * organization.billing_point.unlinked -> `pos.unlink` a `device:<deviceId>`
 //        (el POS se desvincula solo, sin esperar a que el admin lo force).
+//      * organization.billing_point.paired/unlinked -> `emission_points.changed` a la
+//        org (el CRM abierto refresca la lista de puntos de emision sin recargar).
 //      * plugin.#                     -> `plugins.changed` a la org dueña del
 //        evento (activaciones/desactivaciones y ciclo de plugins a medida).
 //      * identity.#                   -> `permissions.changed` a `user:<uid>`
@@ -224,17 +226,24 @@ async function handleRealtimeMessage(
     return;
   }
 
-  if (routingKey === 'organization.billing_point.unlinked') {
-    // Avisa al terminal POS afectado (deviceId) para que se desvincule solo.
-    const deviceId = payload.deviceId as string | undefined;
-    if (!deviceId) {
-      channel.ack(msg);
-      return;
+  if (routingKey === 'organization.billing_point.paired' || routingKey === 'organization.billing_point.unlinked') {
+    // El CRM abierto de esa organizacion refresca solo la lista de puntos de emision (aparece/desaparece
+    // "Desvincular", se cierra el dialogo del codigo). Es un aviso: el estado real se vuelve a pedir por REST.
+    const orgId = payload.organizationId as string | undefined;
+    if (orgId) {
+      io.to(`${ROOM_PREFIX}${orgId}`).emit('emission_points.changed', {
+        event: routingKey,
+        ...payload,
+      });
     }
-    io.to(`${DEVICE_ROOM_PREFIX}${deviceId}`).emit('pos.unlink', {
-      event: routingKey,
-      ...payload,
-    });
+    // Ademas, al desvincular se avisa al terminal POS afectado (deviceId) para que se desvincule solo.
+    const deviceId = payload.deviceId as string | undefined;
+    if (routingKey === 'organization.billing_point.unlinked' && deviceId) {
+      io.to(`${DEVICE_ROOM_PREFIX}${deviceId}`).emit('pos.unlink', {
+        event: routingKey,
+        ...payload,
+      });
+    }
     channel.ack(msg);
     return;
   }
@@ -289,7 +298,6 @@ async function handleRealtimeMessage(
     return;
   }
 
-  // 'organization.billing_point.paired' y cualquier otro evento: no hay nada
-  // que reenviar a sockets todavía.
+  // cualquier otro evento: no hay nada que reenviar a sockets todavía.
   channel.ack(msg);
 }

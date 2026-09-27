@@ -96,6 +96,10 @@ export function createRealtimeHub(options: RealtimeHubOptions): SocketServer {
     // `device:<sub>` permite enrutarle eventos punto-a-punto (p.ej. la
     // desvinculación) sin depender de que esté en la sala de la org.
     const sub = socket.data.subjectId as string | null;
+    console.log(`[realtime] socket conectado org=${orgId} sub=${sub ?? '-'}`);
+    socket.on('disconnect', (reason) => {
+      console.log(`[realtime] socket desconectado org=${orgId} sub=${sub ?? '-'} (${reason})`);
+    });
     if (sub) {
       socket.join(`${DEVICE_ROOM_PREFIX}${sub}`);
       // Sala por usuario: el gateway emite `permissions.changed` aquí cuando
@@ -229,20 +233,24 @@ async function handleRealtimeMessage(
   if (routingKey === 'organization.billing_point.paired' || routingKey === 'organization.billing_point.unlinked') {
     // El CRM abierto de esa organizacion refresca solo la lista de puntos de emision (aparece/desaparece
     // "Desvincular", se cierra el dialogo del codigo). Es un aviso: el estado real se vuelve a pedir por REST.
+    // Se registra cuantos sockets habia en cada sala: emitir a una sala vacia no da error y es la forma mas
+    // facil de perder el aviso sin enterarse.
     const orgId = payload.organizationId as string | undefined;
     if (orgId) {
-      io.to(`${ROOM_PREFIX}${orgId}`).emit('emission_points.changed', {
-        event: routingKey,
-        ...payload,
-      });
+      const room = `${ROOM_PREFIX}${orgId}`;
+      io.to(room).emit('emission_points.changed', { event: routingKey, ...payload });
+      console.log(`[realtime] ${routingKey} -> emission_points.changed a ${(await io.in(room).allSockets()).size} socket(s) de la org ${orgId}`);
     }
     // Ademas, al desvincular se avisa al terminal POS afectado (deviceId) para que se desvincule solo.
     const deviceId = payload.deviceId as string | undefined;
-    if (routingKey === 'organization.billing_point.unlinked' && deviceId) {
-      io.to(`${DEVICE_ROOM_PREFIX}${deviceId}`).emit('pos.unlink', {
-        event: routingKey,
-        ...payload,
-      });
+    if (routingKey === 'organization.billing_point.unlinked') {
+      if (deviceId) {
+        const room = `${DEVICE_ROOM_PREFIX}${deviceId}`;
+        io.to(room).emit('pos.unlink', { event: routingKey, ...payload });
+        console.log(`[realtime] ${routingKey} -> pos.unlink a ${(await io.in(room).allSockets()).size} socket(s) del dispositivo ${deviceId}`);
+      } else {
+        console.log(`[realtime] ${routingKey} sin deviceId: no hay terminal POS al que avisar`);
+      }
     }
     channel.ack(msg);
     return;

@@ -3,6 +3,7 @@ import type { Server as HttpServer } from 'node:http';
 import { Channel, ChannelModel, connect, ConsumeMessage } from 'amqplib';
 import type { Authenticator } from '../core/types';
 import type { NotificationGate } from './notification-gate';
+import { posThemeRooms, posThemeSocketPayload } from './pos-theme-routing';
 const EXCHANGE = 'crm.events';
 const ROOM_PREFIX = 'catalog:';
 const DEVICE_ROOM_PREFIX = 'device:';
@@ -19,6 +20,10 @@ const USER_ROOM_PREFIX = 'user:';
 //        (el POS se desvincula solo, sin esperar a que el admin lo force).
 //      * organization.billing_point.paired/unlinked -> `emission_points.changed` a la
 //        org (el CRM abierto refresca la lista de puntos de emision sin recargar).
+//      * organization.pos_theme.changed    -> `pos_theme.changed` a la sala de la org
+//        cuando lo que cambio es el tema predeterminado, o al `device:<deviceId>` de
+//        cada caja afectada cuando es un tema propio. El aviso NO lleva el config: la
+//        caja lo vuelve a pedir por REST con su ETag, y asi sale un 304 sin bytes.
 //      * plugin.#                     -> `plugins.changed` a la org dueña del
 //        evento (activaciones/desactivaciones y ciclo de plugins a medida).
 //      * identity.#                   -> `permissions.changed` a `user:<uid>`
@@ -136,6 +141,7 @@ async function startRealtimeConsumer(
       });
       await channel.bindQueue(queue, EXCHANGE, 'product.product.#');
       await channel.bindQueue(queue, EXCHANGE, 'organization.billing_point.#');
+      await channel.bindQueue(queue, EXCHANGE, 'organization.pos_theme.changed');
       await channel.bindQueue(queue, EXCHANGE, 'plugin.#');
       await channel.bindQueue(queue, EXCHANGE, 'identity.#');
       await channel.bindQueue(queue, EXCHANGE, 'billing.invoice.#');
@@ -149,7 +155,7 @@ async function startRealtimeConsumer(
         });
       });
 
-      console.log('[realtime] consumidor crm.events activo (product.product.*, organization.billing_point.*, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required)');
+      console.log('[realtime] consumidor crm.events activo (product.product.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required)');
     } catch (err) {
       console.error('[realtime] no se pudo conectar a RabbitMQ, reintentando en 5s:', err);
       setTimeout(connectLoop, 5_000);
@@ -251,6 +257,32 @@ async function handleRealtimeMessage(
       } else {
         console.log(`[realtime] ${routingKey} sin deviceId: no hay terminal POS al que avisar`);
       }
+    }
+    channel.ack(msg);
+    return;
+  }
+
+  if (routingKey === 'organization.pos_theme.changed') {
+    // Cambio de tema del POS. El aviso NUNCA lleva el config: la caja vuelve a
+    // pedirlo por REST con su If-None-Match, y así el 99% de las veces sale un
+    // 304 sin bytes. La decisión de a qué salas va está en `pos-theme-routing`,
+    // que es pura y está testeada; aquí solo se emite.
+    const routing = posThemeRooms(payload);
+    if (!routing) {
+      channel.nack(msg, false, false);
+      return;
+    }
+    const aviso = posThemeSocketPayload(payload, routing.organizationId);
+
+    // Se registra el recuento porque emitir a una sala vacía no da error y es la
+    // forma más fácil de perder el aviso sin enterarse.
+    for (const room of routing.rooms) {
+      io.to(room).emit('pos_theme.changed', aviso);
+      const destinatarios = (await io.in(room).allSockets()).size;
+      console.log(`[realtime] ${routingKey} (${routing.mode}) -> pos_theme.changed a ${destinatarios} socket(s) de ${room}`);
+    }
+    if (routing.rooms.length === 0) {
+      console.log(`[realtime] ${routingKey} sin affectedDeviceIds: ninguna caja emparejada que avisar`);
     }
     channel.ack(msg);
     return;

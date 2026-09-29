@@ -8,6 +8,15 @@ import { Agent } from 'undici';
 // eslint-disable-next-line no-console
 const log = console.error.bind(console, '[proxy]');
 
+// 204/205/304 son "null body status" segun Fetch: el constructor de Response
+// RECHAZA cualquier body en esos status, incluso uno de cero bytes
+// ("TypeError: Invalid response status code 204"). Un servicio que contesta 204
+// (p.ej. POST /users/:id/password-reset de auth-service) llegaba aqui con un
+// buffer vacio, el new Response lanzaba, y el error salia por el onError del
+// gateway como 500 INTERNAL_ERROR - cuando el reset de contraseña ya se habia
+// hecho de verdad. Para esos status el body tiene que ser null, no un buffer.
+const NULL_BODY_STATUS = new Set([204, 205, 304]);
+
 // Agent unico y compartido para el fetch() del proxy hacia los servicios
 // downstream. Sin esto, fetch() usa el dispatcher global de undici tal cual
 // - y en la practica el pod terminaba abriendo una conexion TCP nueva por
@@ -106,8 +115,9 @@ async function proxyRawS3(
         const chunks: Buffer[] = [];
         res.on('data', (d: Buffer) => chunks.push(d));
         res.on('end', () => {
+          const body = Buffer.concat(chunks);
           resolve(
-            new Response(Buffer.concat(chunks), {
+            new Response(NULL_BODY_STATUS.has(res.statusCode) ? null : body, {
               status: res.statusCode,
               statusText: res.statusMessage,
               headers: sanitizeResponseHeaders(new Headers(res.headers)),
@@ -250,7 +260,9 @@ export async function proxyRequest(
     // stream tal cual deja esa liberacion en manos de que Hono/el resto del
     // middleware (p.ej. el rate-limit, que hace c.res.headers.set(...)
     // DESPUES de next()) lo drene correctamente - y no siempre lo hacia.
-    const bodyBuffer = await response.arrayBuffer();
+    const bodyBuffer = NULL_BODY_STATUS.has(response.status)
+      ? null
+      : await response.arrayBuffer();
     return new Response(bodyBuffer, {
       status: response.status,
       statusText: response.statusText,

@@ -15,13 +15,14 @@ describe('catalogRoutingOrgs', () => {
     'identity.user.enabled',
     'identity.user.role_assigned',
     'identity.user.establishments_updated',
+    'identity.role.updated',
+    'identity.role.created',
   ])('%s avisa a la organización', (key) => {
     expect(catalogRoutingOrgs(key, { organizationId: ORG })).toEqual([ORG]);
   });
 
   it.each([
     'product.unit.created',
-    'identity.role.updated',
     'tax.tax_rate.upserted',
     'billing.invoice.issued',
     'plugin.activated',

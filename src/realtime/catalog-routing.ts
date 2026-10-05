@@ -24,7 +24,9 @@ export function catalogRoutingOrgs(routingKey: string, payload: Record<string, u
   if (routingKey.startsWith('product.product.')) return orgs;
   if (routingKey.startsWith('product.category.')) return orgs;
   if (routingKey.startsWith('customer.')) return orgs;
-  // Solo los eventos de usuario (no identity.role.*: un rol cambiado se nota en los usuarios que lo tienen).
   if (routingKey.startsWith('identity.user.')) return orgs;
+  // Un rol al que le cambian los permisos (identity.role.*) cambia lo que pueden hacer sus usuarios EN LA CAJA, por
+  // ejemplo cobrar: la caja baja los permisos de cada rol junto con los usuarios.
+  if (routingKey.startsWith('identity.role.')) return orgs;
   return [];
 }

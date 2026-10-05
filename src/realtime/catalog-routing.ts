@@ -10,14 +10,21 @@
 // Los impuestos (tax.tax_rate.upserted) NO se enrutan aquí: el evento no lleva organizationId (las tasas son
 // por país, no por organización), así que no hay sala a la que avisar. Siguen entrando por el ciclo programado.
 
-export function catalogRoutingOrg(routingKey: string, payload: Record<string, unknown>): string | null {
-  const orgId = typeof payload.organizationId === 'string' ? payload.organizationId : null;
-  if (!orgId) return null;
+// Organizaciones a las que avisar. La mayoría de los eventos trae `organizationId` (una); los de identidad que
+// no pertenecen a una organización en concreto —restablecer contraseña, completar perfil— traen
+// `organizationIds` (todas las del usuario): su contraseña y su nombre se espejan en las cajas de cada una.
+export function catalogRoutingOrgs(routingKey: string, payload: Record<string, unknown>): string[] {
+  const single = typeof payload.organizationId === 'string' ? [payload.organizationId] : [];
+  const many = Array.isArray(payload.organizationIds)
+    ? payload.organizationIds.filter((o): o is string => typeof o === 'string' && o.length > 0)
+    : [];
+  const orgs = [...new Set([...single, ...many])];
+  if (orgs.length === 0) return [];
 
-  if (routingKey.startsWith('product.product.')) return orgId;
-  if (routingKey.startsWith('product.category.')) return orgId;
-  if (routingKey.startsWith('customer.')) return orgId;
+  if (routingKey.startsWith('product.product.')) return orgs;
+  if (routingKey.startsWith('product.category.')) return orgs;
+  if (routingKey.startsWith('customer.')) return orgs;
   // Solo los eventos de usuario (no identity.role.*: un rol cambiado se nota en los usuarios que lo tienen).
-  if (routingKey.startsWith('identity.user.')) return orgId;
-  return null;
+  if (routingKey.startsWith('identity.user.')) return orgs;
+  return [];
 }

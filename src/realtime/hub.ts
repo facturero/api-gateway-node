@@ -4,7 +4,7 @@ import { Channel, ChannelModel, connect, ConsumeMessage } from 'amqplib';
 import type { Authenticator } from '../core/types';
 import type { NotificationGate } from './notification-gate';
 import { posThemeRooms, posThemeSocketPayload } from './pos-theme-routing';
-import { catalogRoutingOrg } from './catalog-routing';
+import { catalogRoutingOrgs } from './catalog-routing';
 const EXCHANGE = 'crm.events';
 const ROOM_PREFIX = 'catalog:';
 const DEVICE_ROOM_PREFIX = 'device:';
@@ -330,8 +330,7 @@ async function handleRealtimeMessage(
     // devuelva 401 TOKEN_STALE si sigue con el token viejo).
     // Además, la caja POS baja los usuarios en su pull: un usuario deshabilitado / con otro rol o
     // establecimiento tiene que llegar a la caja ya, no en el siguiente ciclo (ver catalog-routing.ts).
-    const catalogOrg = catalogRoutingOrg(routingKey, payload);
-    if (catalogOrg) {
+    for (const catalogOrg of catalogRoutingOrgs(routingKey, payload)) {
       io.to(`${ROOM_PREFIX}${catalogOrg}`).emit('catalog.changed', { event: routingKey, ...payload });
     }
     const userIds = extractUserIds(payload);

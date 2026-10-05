@@ -16,6 +16,12 @@ const USER_ROOM_PREFIX = 'user:';
 //  - Consume crm.events:
 //      * product.product.*            -> `catalog.changed` a la org (el POS
 //        hace un pull autenticado; aquí nunca va el catálogo completo).
+//      * customer.#                   -> `catalog.changed` a la org, igual que
+//        product.product.* (mismo evento: el pull del POS ya baja clientes junto
+//        con el catálogo, así que no hace falta un evento propio). Antes de esto,
+//        customer-service SÍ publicaba estos eventos pero el gateway nunca los
+//        escuchaba: un cliente editado solo le llegaba a la caja en el siguiente
+//        pull programado (cada 5 min), nunca al instante.
 //      * organization.billing_point.unlinked -> `pos.unlink` a `device:<deviceId>`
 //        (el POS se desvincula solo, sin esperar a que el admin lo force).
 //      * organization.billing_point.paired/unlinked -> `emission_points.changed` a la
@@ -140,6 +146,7 @@ async function startRealtimeConsumer(
         durable: true,
       });
       await channel.bindQueue(queue, EXCHANGE, 'product.product.#');
+      await channel.bindQueue(queue, EXCHANGE, 'customer.#');
       await channel.bindQueue(queue, EXCHANGE, 'organization.billing_point.#');
       await channel.bindQueue(queue, EXCHANGE, 'organization.pos_theme.changed');
       await channel.bindQueue(queue, EXCHANGE, 'plugin.#');
@@ -155,7 +162,7 @@ async function startRealtimeConsumer(
         });
       });
 
-      console.log('[realtime] consumidor crm.events activo (product.product.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required)');
+      console.log('[realtime] consumidor crm.events activo (product.product.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required)');
     } catch (err) {
       console.error('[realtime] no se pudo conectar a RabbitMQ, reintentando en 5s:', err);
       setTimeout(connectLoop, 5_000);
@@ -222,7 +229,7 @@ async function handleRealtimeMessage(
     return;
   }
 
-  if (routingKey.startsWith('product.product.')) {
+  if (routingKey.startsWith('product.product.') || routingKey.startsWith('customer.')) {
     const orgId = payload.organizationId as string | undefined;
     if (!orgId) {
       channel.nack(msg, false, false);

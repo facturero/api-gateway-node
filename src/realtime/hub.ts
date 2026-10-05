@@ -4,6 +4,7 @@ import { Channel, ChannelModel, connect, ConsumeMessage } from 'amqplib';
 import type { Authenticator } from '../core/types';
 import type { NotificationGate } from './notification-gate';
 import { posThemeRooms, posThemeSocketPayload } from './pos-theme-routing';
+import { catalogRoutingOrg } from './catalog-routing';
 const EXCHANGE = 'crm.events';
 const ROOM_PREFIX = 'catalog:';
 const DEVICE_ROOM_PREFIX = 'device:';
@@ -146,6 +147,7 @@ async function startRealtimeConsumer(
         durable: true,
       });
       await channel.bindQueue(queue, EXCHANGE, 'product.product.#');
+      await channel.bindQueue(queue, EXCHANGE, 'product.category.#');
       await channel.bindQueue(queue, EXCHANGE, 'customer.#');
       await channel.bindQueue(queue, EXCHANGE, 'organization.billing_point.#');
       await channel.bindQueue(queue, EXCHANGE, 'organization.pos_theme.changed');
@@ -162,7 +164,7 @@ async function startRealtimeConsumer(
         });
       });
 
-      console.log('[realtime] consumidor crm.events activo (product.product.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required)');
+      console.log('[realtime] consumidor crm.events activo (product.product.*, product.category.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required)');
     } catch (err) {
       console.error('[realtime] no se pudo conectar a RabbitMQ, reintentando en 5s:', err);
       setTimeout(connectLoop, 5_000);
@@ -229,7 +231,7 @@ async function handleRealtimeMessage(
     return;
   }
 
-  if (routingKey.startsWith('product.product.') || routingKey.startsWith('customer.')) {
+  if (routingKey.startsWith('product.product.') || routingKey.startsWith('product.category.') || routingKey.startsWith('customer.')) {
     const orgId = payload.organizationId as string | undefined;
     if (!orgId) {
       channel.nack(msg, false, false);
@@ -326,6 +328,12 @@ async function handleRealtimeMessage(
     // avisa a cada usuario afectado en su sala `user:<uid>`, para que el
     // frontend actualice el store al instante (y la próxima request le
     // devuelva 401 TOKEN_STALE si sigue con el token viejo).
+    // Además, la caja POS baja los usuarios en su pull: un usuario deshabilitado / con otro rol o
+    // establecimiento tiene que llegar a la caja ya, no en el siguiente ciclo (ver catalog-routing.ts).
+    const catalogOrg = catalogRoutingOrg(routingKey, payload);
+    if (catalogOrg) {
+      io.to(`${ROOM_PREFIX}${catalogOrg}`).emit('catalog.changed', { event: routingKey, ...payload });
+    }
     const userIds = extractUserIds(payload);
     if (userIds.length === 0) {
       channel.ack(msg);

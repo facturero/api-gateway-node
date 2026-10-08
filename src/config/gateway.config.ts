@@ -107,6 +107,11 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'ANY', path: '/organizations/me/plugins', service: 'plugin-catalog-service', stripPrefix: '' },
       { method: 'ANY', path: '/organizations/me/plugin-requests', service: 'plugin-catalog-service', stripPrefix: '' },
       { method: 'ANY', path: '/admin/plugin-requests/*', service: 'plugin-catalog-service', stripPrefix: '' },
+      // Prueba gratis e IVA, descuentos canjeados por la organización y administración de descuentos (plugins:admin).
+      { method: 'ANY', path: '/organizations/me/subscription', service: 'plugin-catalog-service', stripPrefix: '' },
+      { method: 'ANY', path: '/organizations/me/discount-redemptions', service: 'plugin-catalog-service', stripPrefix: '' },
+      { method: 'ANY', path: '/admin/discounts', service: 'plugin-catalog-service', stripPrefix: '' },
+      { method: 'ANY', path: '/admin/discounts/*', service: 'plugin-catalog-service', stripPrefix: '' },
 
       // notification-service — catálogo de providers y preferencias por usuario.
       { method: 'ANY', path: '/notifications/*', service: 'notification-service', stripPrefix: '' },

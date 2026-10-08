@@ -37,6 +37,8 @@ describe('rutas de plugin-catalog-service en el gateway', () => {
     ['GET', '/organizations/me/plugins'],
     ['GET', '/organizations/me/plugins/pos.core/quote'],
     ['POST', '/organizations/me/plugins/pos.core/activate'],
+    ['POST', '/organizations/me/plugins/pos.core/deactivate'],
+    ['POST', '/organizations/me/plugins/pos.core/cancel-deactivation'],
     ['GET', '/organizations/me/subscription'],
     ['GET', '/organizations/me/discount-redemptions'],
     ['GET', '/admin/discounts'],

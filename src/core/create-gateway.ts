@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { bodyLimit } from 'hono/body-limit';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { httpInstrumentationMiddleware } from '@hono/otel';
 import type { GatewayConfig, RateLimitStore, RouteRule } from './types';
@@ -79,7 +80,7 @@ export function createGateway(config: GatewayConfig): Hono {
     app.use('*', cors({
       origin: config.cors.origin,
       allowMethods: ['GET', 'HEAD', 'PUT', 'POST', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization'],
+      allowHeaders: ['Content-Type', 'Authorization', ...(config.cors.allowHeaders ?? [])],
       credentials: true,
     }));
   }
@@ -87,6 +88,7 @@ export function createGateway(config: GatewayConfig): Hono {
   // ── Rate limit ──
   if (config.rateLimit) {
     app.use('*', async (c, next) => {
+      if (config.rateLimit!.skipPaths?.some((prefix) => c.req.path.startsWith(prefix))) return next();
       const ip = clientIp(c);
       const effectiveTrustedIps = config.rateLimit!.trustedIpCache?.getTrustedIps() ?? config.rateLimit!.trustedIps ?? [];
       const isTrusted = isIpTrusted(ip, effectiveTrustedIps);
@@ -115,6 +117,12 @@ export function createGateway(config: GatewayConfig): Hono {
 
   // ── Rutas dinámicas ──
   for (const rule of config.routes) {
+    if (rule.maxBodyBytes) {
+      app.use(rule.path, bodyLimit({
+        maxSize: rule.maxBodyBytes,
+        onError: (c) => c.json(errorBody('PAYLOAD_TOO_LARGE', 'El cuerpo de la petición es demasiado grande.'), 413),
+      }));
+    }
     const handler = createRouteHandler(rule, config, spoofHeaders, rateLimitStore);
     if (rule.method === 'ANY') {
       app.all(rule.path, handler);

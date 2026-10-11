@@ -46,6 +46,7 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.NOTIFICATION_SERVICE_URL) services.push({ name: 'notification-service', url: env.NOTIFICATION_SERVICE_URL });
   if (env.AUDIT_LOG_SERVICE_URL) services.push({ name: 'audit-log-service', url: env.AUDIT_LOG_SERVICE_URL });
   if (env.ASSISTANT_SERVICE_URL) services.push({ name: 'assistant-service', url: env.ASSISTANT_SERVICE_URL });
+  if (env.TELEMETRY_COLLECTOR_URL) services.push({ name: 'otel-collector', url: env.TELEMETRY_COLLECTOR_URL });
   const pluginActivations = env.PLUGIN_CATALOG_SERVICE_URL
     ? new PluginActivationCache(env.PLUGIN_CATALOG_SERVICE_URL)
     : null;
@@ -78,6 +79,20 @@ export function buildGatewayConfig(): GatewayConfig {
     services,
     permissionsCache,
     routes: [
+      // Telemetría del navegador → colector OTLP/HTTP (SigNoz). Pública a propósito: los errores del login ocurren sin sesión.
+      // Por eso va acotada: SOLO este endpoint exacto (sin comodín: nada más del colector queda expuesto), SOLO POST, tope de
+      // tamaño y un límite propio por IP; no cuenta en el límite global (ver `skipPaths`).
+      ...(env.TELEMETRY_COLLECTOR_URL
+        ? [{
+            method: 'POST' as const,
+            path: '/telemetry/v1/traces',
+            service: 'otel-collector',
+            stripPrefix: '/telemetry',
+            public: true,
+            rateLimit: { windowMs: 60_000, max: 60 },
+            maxBodyBytes: 256 * 1024,
+          }]
+        : []),
       { method: 'POST', path: '/auth/register', service: 'auth-service', public: true },
       { method: 'POST', path: '/auth/login', service: 'auth-service', public: true },
       { method: 'POST', path: '/auth/google', service: 'auth-service', public: true },
@@ -174,13 +189,19 @@ export function buildGatewayConfig(): GatewayConfig {
     // CORS_ORIGIN admite varios orígenes separados por coma: en desarrollo el
     // front se abre tanto por localhost como por la IP de red (para probarlo
     // desde el móvil), y ambos tienen que pasar el preflight.
-    cors: { origin: env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean) },
+    // `traceparent`/`tracestate`: el navegador los añade a cada llamada para enlazar su traza con la del backend; sin ellos
+    // en la lista, el preflight rechaza TODAS las peticiones.
+    cors: {
+      origin: env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean),
+      allowHeaders: ['traceparent', 'tracestate'],
+    },
     rateLimit: {
       windowMs: env.RATE_LIMIT_WINDOW_MS,
       max: env.RATE_LIMIT_MAX,
       trustedIps: fallbackIps,
       trustedMax: env.RATE_LIMIT_TRUSTED_MAX,
       trustedIpCache,
+      skipPaths: ['/telemetry/'],
     },
   };
 }

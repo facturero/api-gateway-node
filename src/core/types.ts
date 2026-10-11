@@ -48,6 +48,7 @@ export interface RouteRule {
   public?: boolean; // true = no exige token
   stripPrefix?: string; // prefijo a quitar antes de reenviar (opcional)
   rateLimit?: { windowMs: number; max: number }; // límite propio de la ruta (además del global)
+  maxBodyBytes?: number; // tamaño máximo del cuerpo; más grande responde 413 sin llegar al servicio
   requiresPlugin?: string; // código de plugin que la organización debe tener activo
   /**
    * Permiso que el claim `permissions` del token debe contener (también admite
@@ -74,10 +75,17 @@ export interface RateLimitConfig {
   trustedMax?: number;
   trustedIpCache?: import('./trusted-ip-cache').TrustedIpCache;
   store?: RateLimitStore;
+  /**
+   * Prefijos de ruta que NO cuentan en el límite global (siguen con el suyo propio, `RouteRule.rateLimit`). Para tráfico que el
+   * navegador genera solo, como la telemetría: si gastara el cupo general, un usuario quieto recibiría 429 en sus acciones.
+   */
+  skipPaths?: string[];
 }
 
 export interface CorsConfig {
   origin: string | string[];
+  /** Cabeceras extra que el navegador puede enviar, además de Content-Type y Authorization (p. ej. `traceparent`). */
+  allowHeaders?: string[];
 }
 
 /**

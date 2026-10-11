@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildGatewayConfig } from './gateway.config';
 
 // Cada ruta que un servicio expone y el gateway no declara es un 404 para el navegador (o cae al comodín de otro servicio):
@@ -19,6 +19,7 @@ beforeAll(() => {
   process.env.AUTH_SERVICE_URL = 'http://auth:3000';
   process.env.ORG_SERVICE_URL = 'http://org:3002';
   process.env.PLUGIN_CATALOG_SERVICE_URL = 'http://plugins:3011';
+  process.env.TELEMETRY_COLLECTOR_URL = 'http://collector:4318';
   rutas = (buildGatewayConfig() as unknown as { routes: Route[] }).routes;
 });
 
@@ -59,5 +60,24 @@ describe('rutas de plugin-catalog-service en el gateway', () => {
 
   it('el comodín /organizations/* sigue mandando lo demás a organization-service', () => {
     expect(destino('GET', '/organizations/me')).toBe('org-service');
+  });
+});
+
+describe('ruta de telemetría del navegador', () => {
+  it('solo POST /telemetry/v1/traces va al colector: pública, con tope de tamaño y límite propio', () => {
+    const ruta = (rutas as unknown as Array<Record<string, unknown>>).find((r) => r.path === '/telemetry/v1/traces');
+    expect(ruta).toMatchObject({ method: 'POST', service: 'otel-collector', public: true, stripPrefix: '/telemetry' });
+    expect(ruta?.maxBodyBytes).toBeGreaterThan(0);
+    expect(ruta?.rateLimit).toBeDefined();
+    expect(destino('GET', '/telemetry/v1/traces')).toBeUndefined();
+    expect(destino('POST', '/telemetry/v1/metrics')).toBeUndefined();
+  });
+
+  it('sin TELEMETRY_COLLECTOR_URL la ruta no existe', async () => {
+    delete process.env.TELEMETRY_COLLECTOR_URL;
+    vi.resetModules(); // loadEnv guarda el entorno la primera vez que se lee
+    const { buildGatewayConfig: construir } = await import('./gateway.config');
+    const sin = (construir() as unknown as { routes: Route[] }).routes;
+    expect(sin.find((r) => r.path === '/telemetry/v1/traces')).toBeUndefined();
   });
 });

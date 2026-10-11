@@ -76,7 +76,7 @@ describe('ruta de telemetría del navegador', () => {
   it('sin TELEMETRY_COLLECTOR_URL la ruta no existe', async () => {
     delete process.env.TELEMETRY_COLLECTOR_URL;
     vi.resetModules(); // loadEnv guarda el entorno la primera vez que se lee
-    const { buildGatewayConfig: construir } = await import('./gateway.config');
+    const { buildGatewayConfig: construir } = await import('./gateway.config.js');
     const sin = (construir() as unknown as { routes: Route[] }).routes;
     expect(sin.find((r) => r.path === '/telemetry/v1/traces')).toBeUndefined();
   });

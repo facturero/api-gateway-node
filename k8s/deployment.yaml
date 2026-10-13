@@ -76,7 +76,7 @@ spec:
                   name: gateway-rabbitmq
                   key: url
             - name: CORS_ORIGIN
-              value: "https://crm.noahsolution.com,https://pos.noahsolution.com"
+              value: "https://crm.noahsolution.com"
             - name: TELEMETRY_COLLECTOR_URL
               value: "http://otel-collector.observability.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME

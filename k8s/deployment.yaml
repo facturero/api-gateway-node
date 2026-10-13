@@ -43,6 +43,11 @@ spec:
               value: "http://product-service-node:3006"
             - name: INVENTORY_SERVICE_URL
               value: "http://inventory-service-node:3013"
+            # Sin esta variable el gateway no registra restaurant-service ni la
+            # ruta /restaurant/*: el módulo responde 404 aunque su pod esté sano.
+            # El Service se llama restaurant-service-node (ver su k8s/service.yaml).
+            - name: RESTAURANT_SERVICE_URL
+              value: "http://restaurant-service-node:3015"
             - name: TAX_SERVICE_URL
               value: "http://tax-service:3005"
             - name: DOCUMENT_SERVICE_URL

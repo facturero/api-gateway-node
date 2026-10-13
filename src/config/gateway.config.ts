@@ -46,6 +46,7 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.NOTIFICATION_SERVICE_URL) services.push({ name: 'notification-service', url: env.NOTIFICATION_SERVICE_URL });
   if (env.AUDIT_LOG_SERVICE_URL) services.push({ name: 'audit-log-service', url: env.AUDIT_LOG_SERVICE_URL });
   if (env.ASSISTANT_SERVICE_URL) services.push({ name: 'assistant-service', url: env.ASSISTANT_SERVICE_URL });
+  if (env.RESTAURANT_SERVICE_URL) services.push({ name: 'restaurant-service', url: env.RESTAURANT_SERVICE_URL });
   if (env.TELEMETRY_COLLECTOR_URL) services.push({ name: 'otel-collector', url: env.TELEMETRY_COLLECTOR_URL });
   const pluginActivations = env.PLUGIN_CATALOG_SERVICE_URL
     ? new PluginActivationCache(env.PLUGIN_CATALOG_SERVICE_URL)
@@ -166,6 +167,17 @@ export function buildGatewayConfig(): GatewayConfig {
       // cuenta (ver su IMPLEMENTATION.md, "El plugin apagado apaga el servicio").
       { method: 'ANY', path: '/warehouses/*', service: 'inventory-service', stripPrefix: '', requiresPlugin: 'inventory.warehouses' },
       { method: 'ANY', path: '/stock/*', service: 'inventory-service', stripPrefix: '', requiresPlugin: 'inventory.kardex' },
+
+      // Restaurantes (módulo de pago `restaurant.floorplan`): mesas, plano y horarios. Igual que con /warehouses/*,
+      // esto SOLO corta el HTTP: restaurant-service no consume eventos en este entregable, así que no hay ningún
+      // read-model de activación que apagar (a diferencia de inventory-service, que corta el consumo de stock por RabbitMQ).
+      // El servicio sirve sus rutas con el prefijo `/restaurant`, por eso `stripPrefix: ''`.
+      //
+      // Regla aparte (y ANTES del comodín: gana la primera que coincide) solo para subir el tope de tamaño del guardado
+      // del plano. El editor manda el local entero —paredes, puertas, mesas, zonas— en un único PUT atómico de hasta
+      // ~256 KB; con el tope por defecto no cabría. Solo esta ruta necesita pasar de 256 KB.
+      { method: 'PUT', path: '/restaurant/floors/:floorId/plan', service: 'restaurant-service', stripPrefix: '', requiresPlugin: 'restaurant.floorplan', maxBodyBytes: 512 * 1024 },
+      { method: 'ANY', path: '/restaurant/*', service: 'restaurant-service', stripPrefix: '', requiresPlugin: 'restaurant.floorplan' },
 
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 

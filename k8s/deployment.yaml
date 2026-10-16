@@ -48,6 +48,9 @@ spec:
             # El Service se llama restaurant-service-node (ver su k8s/service.yaml).
             - name: RESTAURANT_SERVICE_URL
               value: "http://restaurant-service-node:3015"
+            # Contabilidad general (`finance.general_ledger`). Sin esta variable el gateway no registra el servicio ni /accounting/*.
+            - name: ACCOUNTING_SERVICE_URL
+              value: "http://accounting-service-node:3016"
             - name: TAX_SERVICE_URL
               value: "http://tax-service:3005"
             - name: DOCUMENT_SERVICE_URL

@@ -47,6 +47,7 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.AUDIT_LOG_SERVICE_URL) services.push({ name: 'audit-log-service', url: env.AUDIT_LOG_SERVICE_URL });
   if (env.ASSISTANT_SERVICE_URL) services.push({ name: 'assistant-service', url: env.ASSISTANT_SERVICE_URL });
   if (env.RESTAURANT_SERVICE_URL) services.push({ name: 'restaurant-service', url: env.RESTAURANT_SERVICE_URL });
+  if (env.ACCOUNTING_SERVICE_URL) services.push({ name: 'accounting-service', url: env.ACCOUNTING_SERVICE_URL });
   if (env.TELEMETRY_COLLECTOR_URL) services.push({ name: 'otel-collector', url: env.TELEMETRY_COLLECTOR_URL });
   const pluginActivations = env.PLUGIN_CATALOG_SERVICE_URL
     ? new PluginActivationCache(env.PLUGIN_CATALOG_SERVICE_URL)
@@ -179,9 +180,20 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'PUT', path: '/restaurant/floors/:floorId/plan', service: 'restaurant-service', stripPrefix: '', requiresPlugin: 'restaurant.floorplan', maxBodyBytes: 512 * 1024 },
       { method: 'ANY', path: '/restaurant/*', service: 'restaurant-service', stripPrefix: '', requiresPlugin: 'restaurant.floorplan' },
 
+      // Contabilidad general (módulo de pago `finance.general_ledger`): plan de cuentas, periodos, asientos y balance. El servicio
+      // sirve sus rutas con el prefijo `/accounting`, por eso `stripPrefix: ''`. Un asiento puede llevar hasta 500 líneas: las
+      // reglas de escritura de asientos suben el tope de tamaño (van ANTES del comodín: gana la primera que coincide).
+      { method: 'ANY', path: '/accounting/journal-entries', service: 'accounting-service', stripPrefix: '', requiresPlugin: 'finance.general_ledger', maxBodyBytes: 512 * 1024 },
+      { method: 'ANY', path: '/accounting/journal-entries/:id', service: 'accounting-service', stripPrefix: '', requiresPlugin: 'finance.general_ledger', maxBodyBytes: 512 * 1024 },
+      { method: 'ANY', path: '/accounting/*', service: 'accounting-service', stripPrefix: '', requiresPlugin: 'finance.general_ledger' },
+
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 
       { method: 'ANY', path: '/fiscal-invoices/*', service: 'fiscal-ecuador', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
+      // Retenciones y guías de remisión que fiscal emite por su cuenta (`/fiscal/withholdings`, `/fiscal/delivery-guides`, catálogo
+      // de códigos). Salen de la misma facturación electrónica: sin ella no hay certificado ni numeración ante el SRI. Una guía
+      // con 50 destinatarios y 200 mercaderías cada uno pesa unos cientos de KB, de ahí el tope.
+      { method: 'ANY', path: '/fiscal/*', service: 'fiscal-ecuador', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing', maxBodyBytes: 512 * 1024 },
       { method: 'ANY', path: '/certificates/*', service: 'fiscal-ecuador', stripPrefix: '', requiresPlugin: 'finance.electronic_certificate' },
 
       { method: 'ANY', path: '/countries/*', service: 'tax-service', stripPrefix: '' },

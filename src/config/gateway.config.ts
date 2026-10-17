@@ -180,27 +180,7 @@ export function buildGatewayConfig(): GatewayConfig {
       // ~256 KB; con el tope por defecto no cabría. Solo esta ruta necesita pasar de 256 KB.
       { method: 'PUT', path: '/restaurant/floors/:floorId/plan', service: 'restaurant-service', stripPrefix: '', requiresPlugin: 'restaurant.floorplan', maxBodyBytes: 512 * 1024 },
 
-      // Reservas (módulo de pago `restaurant.reservations`, aparte del mapa): estas rutas van ANTES del comodín de
-      // `restaurant.floorplan`, porque gana la primera regla que coincide. Sin ellas, quien solo tuviera el mapa podría
-      // gestionar reservas, y quien tuviera solo las reservas (que dependen del mapa, así que no pasa) no podría.
-      // Son las rutas del PERSONAL (con sesión); las del cliente final están más abajo, bajo `/public/`.
-      { method: 'ANY', path: '/restaurant/reservations/*', service: 'restaurant-service', stripPrefix: '', requiresPlugin: 'restaurant.reservations' },
-      { method: 'ANY', path: '/restaurant/establishments/:establishmentId/reservations', service: 'restaurant-service', stripPrefix: '', requiresPlugin: 'restaurant.reservations', maxBodyBytes: 16 * 1024 },
-      { method: 'ANY', path: '/restaurant/establishments/:establishmentId/reservation-settings', service: 'restaurant-service', stripPrefix: '', requiresPlugin: 'restaurant.reservations', maxBodyBytes: 16 * 1024 },
-      { method: 'ANY', path: '/restaurant/establishments/:establishmentId/availability', service: 'restaurant-service', stripPrefix: '', requiresPlugin: 'restaurant.reservations' },
       { method: 'ANY', path: '/restaurant/*', service: 'restaurant-service', stripPrefix: '', requiresPlugin: 'restaurant.floorplan' },
-
-      // Reserva del CLIENTE FINAL desde la página pública del restaurante (reservas.noahsolution.com): sin sesión.
-      // Aquí no hay token del que sacar la organización, así que el gateway NO puede cortar por plugin: lo hace
-      // restaurant-service, que resuelve el restaurante por su enlace y le pregunta al catálogo (ver ReservationBooker).
-      // Lo que sí hace el gateway es limitar el ritmo por IP — la única defensa contra quien quiera llenar las mesas de
-      // reservas falsas — y acotar el tamaño del cuerpo. Cada regla lleva su propio contador (clave = método + ruta + IP).
-      { method: 'GET', path: '/public/restaurants/:slug', service: 'restaurant-service', stripPrefix: '', public: true, rateLimit: { windowMs: 60_000, max: 60 } },
-      { method: 'GET', path: '/public/restaurants/:slug/availability', service: 'restaurant-service', stripPrefix: '', public: true, rateLimit: { windowMs: 60_000, max: 120 } },
-      // 5 reservas cada 10 minutos por IP: una familia o un grupo de oficina reserva una o dos veces, no cinco.
-      { method: 'POST', path: '/public/restaurants/:slug/reservations', service: 'restaurant-service', stripPrefix: '', public: true, rateLimit: { windowMs: 10 * 60_000, max: 5 }, maxBodyBytes: 4 * 1024 },
-      { method: 'GET', path: '/public/reservations/:token', service: 'restaurant-service', stripPrefix: '', public: true, rateLimit: { windowMs: 60_000, max: 30 } },
-      { method: 'POST', path: '/public/reservations/:token/cancel', service: 'restaurant-service', stripPrefix: '', public: true, rateLimit: { windowMs: 10 * 60_000, max: 10 }, maxBodyBytes: 2 * 1024 },
 
       // Contabilidad general (módulo de pago `finance.general_ledger`): plan de cuentas, periodos, asientos y balance. El servicio
       // sirve sus rutas con el prefijo `/accounting`, por eso `stripPrefix: ''`. Un asiento puede llevar hasta 500 líneas: las

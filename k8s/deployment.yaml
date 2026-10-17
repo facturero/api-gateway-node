@@ -86,9 +86,8 @@ spec:
                 secretKeyRef:
                   name: gateway-rabbitmq
                   key: url
-            # El sitio público de reservas (reservas-web) llama a /public/* desde el navegador del cliente final.
             - name: CORS_ORIGIN
-              value: "https://crm.noahsolution.com,https://reservas.noahsolution.com"
+              value: "https://crm.noahsolution.com"
             - name: TELEMETRY_COLLECTOR_URL
               value: "http://otel-collector.observability.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME

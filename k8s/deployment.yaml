@@ -51,6 +51,9 @@ spec:
             # Contabilidad general (`finance.general_ledger`). Sin esta variable el gateway no registra el servicio ni /accounting/*.
             - name: ACCOUNTING_SERVICE_URL
               value: "http://accounting-service-node:3016"
+            # Compras (`inventory.suppliers`, `purchasing.purchase_orders`). Sin esta variable el gateway no registra /purchasing/*.
+            - name: PURCHASING_SERVICE_URL
+              value: "http://purchasing-service-node:3017"
             - name: TAX_SERVICE_URL
               value: "http://tax-service:3005"
             - name: DOCUMENT_SERVICE_URL
@@ -83,8 +86,9 @@ spec:
                 secretKeyRef:
                   name: gateway-rabbitmq
                   key: url
+            # El sitio público de reservas (reservas-web) llama a /public/* desde el navegador del cliente final.
             - name: CORS_ORIGIN
-              value: "https://crm.noahsolution.com"
+              value: "https://crm.noahsolution.com,https://reservas.noahsolution.com"
             - name: TELEMETRY_COLLECTOR_URL
               value: "http://otel-collector.observability.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME

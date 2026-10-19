@@ -129,4 +129,53 @@ describe('corte por plugin de /purchasing/*', () => {
     expect(big.status).toBe(413);
     expect(recibidas).toHaveLength(1);
   });
+
+  it('recepción y cierre: rutas nuevas declaradas con plugin correcto y permisos', () => {
+    const config = buildGatewayConfig();
+    // listar/ver recepciones
+    for (const path of ['/purchasing/receipts', '/purchasing/receipts/*']) {
+      expect(config.routes.find((r) => r.path === path)).toMatchObject({ method: 'GET', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders' });
+    }
+    // crear recepción
+    expect(config.routes.find((r) => r.path === '/purchasing/orders/*/receipts')).toMatchObject({
+      method: 'POST', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders',
+      maxBodyBytes: 256 * 1024, permission: 'receipt:create',
+    });
+    // seguimiento de recepción
+    expect(config.routes.find((r) => r.path === '/purchasing/orders/*/receiving')).toMatchObject({
+      method: 'GET', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase:read',
+    });
+    // cerrar orden
+    expect(config.routes.find((r) => r.path === '/purchasing/orders/*/close')).toMatchObject({
+      method: 'POST', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase:close',
+    });
+  });
+
+  it('factura de compra: rutas declaradas con plugin y permisos correctos', () => {
+    const config = buildGatewayConfig();
+    // listar/ver facturas
+    for (const path of ['/purchasing/bills', '/purchasing/bills/*']) {
+      expect(config.routes.find((r) => r.path === path && r.method === 'GET')).toMatchObject({ method: 'GET', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:read' });
+    }
+    // crear factura
+    expect(config.routes.find((r) => r.path === '/purchasing/bills' && r.method === 'POST')).toMatchObject({
+      method: 'POST', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', maxBodyBytes: 256 * 1024, permission: 'purchase_bill:create',
+    });
+    // editar factura
+    expect(config.routes.find((r) => r.path === '/purchasing/bills/*' && r.method === 'PUT')).toMatchObject({
+      method: 'PUT', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', maxBodyBytes: 256 * 1024, permission: 'purchase_bill:create',
+    });
+    // contabilizar
+    expect(config.routes.find((r) => r.path === '/purchasing/bills/*/post')).toMatchObject({
+      method: 'POST', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:create',
+    });
+    // override
+    expect(config.routes.find((r) => r.path === '/purchasing/bills/*/override')).toMatchObject({
+      method: 'POST', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:override',
+    });
+    // anular
+    expect(config.routes.find((r) => r.path === '/purchasing/bills/*/void')).toMatchObject({
+      method: 'POST', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:void',
+    });
+  });
 });

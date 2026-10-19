@@ -9,20 +9,26 @@ import { proxyRequest } from './proxy';
 import { errorBody } from './errors';
 import { InMemoryRateLimitStore } from './rate-limit';
 
-function clientIp(c: any): string {
-  // x-forwarded-for/cf-connecting-ip solo existen detrás de un proxy externo
-  // (Cloudflare, LB). Sin ellos, toda petición directa (dev/tests locales)
-  // caía en el literal 'unknown' — un único bucket de rate-limit compartido
-  // por TODO el tráfico, y nunca matcheable contra ninguna IP/CIDR confiable
-  // (ipToNumber('unknown') === null). Fallback a la IP real del socket.
+export function clientIp(c: any): string {
+  // El tráfico público entra por el túnel de Cloudflare, que fija
+  // cf-connecting-ip con la IP real y la AÑADE al final de x-forwarded-for.
+  // El primer elemento de x-forwarded-for lo escribe el cliente: tomarlo
+  // permitía falsear la IP para saltarse el rate-limit (fuerza bruta de
+  // /auth/login), hacerse pasar por una IP de confianza (límite x5) y mentir
+  // en la bitácora de auditoría. Orden: cf-connecting-ip → el último salto de
+  // x-forwarded-for (el que añadió el proxy) → la IP del socket.
+  // Sin cabeceras de proxy (dev/tests locales, tráfico de la LAN por el
+  // NodePort) se usa la IP real del socket en vez del literal 'unknown', que
+  // sería un único bucket compartido por todo el tráfico.
   const socketIp = getConnInfo(c).remote.address;
+  const forwarded = c.req.header('x-forwarded-for')?.split(',').map((s: string) => s.trim()).filter(Boolean);
   return (
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ??
-    c.req.header('cf-connecting-ip') ??
+    c.req.header('cf-connecting-ip')?.trim() ||
+    forwarded?.[forwarded.length - 1] ||
     // Node reporta conexiones IPv4 sobre un socket dual-stack como IPv4
     // mapeada a IPv6 (::ffff:172.18.0.1) — sin desmapear, ipToNumber()
     // (que espera un dotted-quad puro) la rechaza y nunca matchea CIDR.
-    socketIp?.replace(/^::ffff:/, '') ??
+    socketIp?.replace(/^::ffff:/, '') ||
     'unknown'
   );
 }

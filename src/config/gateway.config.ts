@@ -96,17 +96,19 @@ export function buildGatewayConfig(): GatewayConfig {
             maxBodyBytes: 256 * 1024,
           }]
         : []),
-      { method: 'POST', path: '/auth/register', service: 'auth-service', public: true },
-      { method: 'POST', path: '/auth/login', service: 'auth-service', public: true },
-      { method: 'POST', path: '/auth/google', service: 'auth-service', public: true },
+      // Rutas de credenciales: límite propio por IP además del global. auth-service no bloquea
+      // cuentas tras intentos fallidos, así que sin esto /auth/login admitía 120 contraseñas/min por IP.
+      { method: 'POST', path: '/auth/register', service: 'auth-service', public: true, rateLimit: { windowMs: 60_000, max: 10 } },
+      { method: 'POST', path: '/auth/login', service: 'auth-service', public: true, rateLimit: { windowMs: 60_000, max: 20 } },
+      { method: 'POST', path: '/auth/google', service: 'auth-service', public: true, rateLimit: { windowMs: 60_000, max: 20 } },
       { method: 'POST', path: '/auth/refresh', service: 'auth-service', public: true },
       { method: 'POST', path: '/auth/logout', service: 'auth-service', public: true },
-      { method: 'POST', path: '/auth/accept-invite', service: 'auth-service', public: true },
+      { method: 'POST', path: '/auth/accept-invite', service: 'auth-service', public: true, rateLimit: { windowMs: 60_000, max: 10 } },
       // Sin esta regla, /auth/password-reset caía en el catch-all de abajo
       // (public: false) — el gateway exigía un Bearer token para consumir un
       // link de "olvidé mi contraseña", que por definición es para alguien
       // SIN sesión activa. Bug real, no solo hueco de test (hallazgo #24).
-      { method: 'POST', path: '/auth/password-reset', service: 'auth-service', public: true },
+      { method: 'POST', path: '/auth/password-reset', service: 'auth-service', public: true, rateLimit: { windowMs: 60_000, max: 10 } },
       { method: 'ANY', path: '/auth/*', service: 'auth-service', public: false },
 
       { method: 'GET', path: '/trusted-ips/enabled', service: 'auth-service', public: true },

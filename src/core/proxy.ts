@@ -61,6 +61,19 @@ const HOP_BY_HOP_HEADERS = [
   'upgrade',
 ];
 
+/**
+ * URL destino en el host del servicio. `new URL(path, base)` trata un path que
+ * empieza por `//` como URL relativa al esquema: tras quitar un prefijo,
+ * `/x//otro-host/...` acababa en `http://otro-host/...` (SSRF). Aquí el origen
+ * sale siempre de la configuración y el path solo puede cambiar el path.
+ */
+export function buildTargetUrl(serviceUrl: string, path: string, search: string): URL {
+  const url = new URL(serviceUrl);
+  url.pathname = '/' + path.replace(/^\/+/, '');
+  url.search = search;
+  return url;
+}
+
 function sanitizeResponseHeaders(headers: Headers): Headers {
   const sanitized = new Headers();
   for (const [key, value] of headers) {
@@ -82,8 +95,7 @@ async function proxyRawS3(
   if (rule.stripPrefix) {
     targetPath = targetPath.replace(rule.stripPrefix, '') || '/';
   }
-  const targetUrl = new URL(targetPath, service.url);
-  targetUrl.search = incomingUrl.search;
+  const targetUrl = buildTargetUrl(service.url, targetPath, incomingUrl.search);
 
   const body = Buffer.from(await c.req.raw.arrayBuffer());
 
@@ -158,8 +170,7 @@ export async function proxyRequest(
   }
 
   // Preservar el query string al reenviar.
-  const targetUrl = new URL(targetPath, service.url);
-  targetUrl.search = incomingUrl.search;
+  const targetUrl = buildTargetUrl(service.url, targetPath, incomingUrl.search);
   const targetUrlStr = targetUrl.toString();
 
   const downstreamHeaders = new Headers(c.req.raw.headers);

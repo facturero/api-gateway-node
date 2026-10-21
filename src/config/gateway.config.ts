@@ -242,9 +242,13 @@ export function buildGatewayConfig(): GatewayConfig {
       // Hono usa la PRIMERA regla que coincide: `aging` va antes que `receivables/:id` (si no, «aging» se leería como un id). Los ids son
       // `:id` (UN segmento) y no `*`: un `*` al final también coincide con rutas más profundas (`receipts/x/post`) y las dejaría llegar al servicio.
       { method: 'GET', path: '/treasury/receivables/aging', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
+      // Exportar a CSV: `receivable:export` (aparte de `read`: es dato que sale del sistema). `export` va antes de `receivables/:id`.
+      { method: 'GET', path: '/treasury/receivables/export', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:export' },
+      { method: 'GET', path: '/treasury/receivables/aging/export', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:export' },
       { method: 'GET', path: '/treasury/receivables/:id', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
       { method: 'GET', path: '/treasury/receivables', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
       { method: 'GET', path: '/treasury/customers/:id/statement', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
+      { method: 'GET', path: '/treasury/customers/:id/statement/export', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:export' },
       { method: 'GET', path: '/treasury/customers/:id/terms', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
       { method: 'PUT', path: '/treasury/customers/:id/terms', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'customer_terms:manage', maxBodyBytes: 16 * 1024 },
       { method: 'POST', path: '/treasury/opening-balances', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'opening_balance:load', maxBodyBytes: 256 * 1024 },
@@ -255,6 +259,11 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'PUT', path: '/treasury/receipts/:id', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receipt:create', maxBodyBytes: 256 * 1024 },
       { method: 'POST', path: '/treasury/receipts/:id/post', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receipt:create' },
       { method: 'POST', path: '/treasury/receipts/:id/void', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receipt:void', maxBodyBytes: 16 * 1024 },
+      // Recordatorios de cobro (bloque C): le llegan al CLIENTE de la organización, así que todo es `reminder:manage` (solo Administrador).
+      { method: 'GET', path: '/treasury/reminders/settings', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'reminder:manage' },
+      { method: 'PUT', path: '/treasury/reminders/settings', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'reminder:manage', maxBodyBytes: 16 * 1024 },
+      { method: 'GET', path: '/treasury/reminders/preview', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'reminder:manage' },
+      { method: 'POST', path: '/treasury/reminders/run', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'reminder:manage' },
 
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 

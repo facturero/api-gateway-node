@@ -83,6 +83,13 @@ const RUTAS: { method: string; path: string; patron: string; permiso: string; bo
   { method: 'PUT', path: `/treasury/receipts/${ID}`, patron: '/treasury/receipts/:id', permiso: 'receipt:create', body: '{}' },
   { method: 'POST', path: `/treasury/receipts/${ID}/post`, patron: '/treasury/receipts/:id/post', permiso: 'receipt:create' },
   { method: 'POST', path: `/treasury/receipts/${ID}/void`, patron: '/treasury/receipts/:id/void', permiso: 'receipt:void', body: '{"reason":"duplicado"}' },
+  { method: 'GET', path: '/treasury/receivables/export', patron: '/treasury/receivables/export', permiso: 'receivable:export' },
+  { method: 'GET', path: '/treasury/receivables/aging/export', patron: '/treasury/receivables/aging/export', permiso: 'receivable:export' },
+  { method: 'GET', path: `/treasury/customers/${ID}/statement/export`, patron: '/treasury/customers/:id/statement/export', permiso: 'receivable:export' },
+  { method: 'GET', path: '/treasury/reminders/settings', patron: '/treasury/reminders/settings', permiso: 'reminder:manage' },
+  { method: 'PUT', path: '/treasury/reminders/settings', patron: '/treasury/reminders/settings', permiso: 'reminder:manage', body: '{}' },
+  { method: 'GET', path: '/treasury/reminders/preview', patron: '/treasury/reminders/preview', permiso: 'reminder:manage' },
+  { method: 'POST', path: '/treasury/reminders/run', patron: '/treasury/reminders/run', permiso: 'reminder:manage' },
 ];
 
 const llamar = (app: ReturnType<typeof gateway>, r: { method: string; path: string; body?: string }, headers: Record<string, string> = h) =>

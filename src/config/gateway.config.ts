@@ -239,14 +239,22 @@ export function buildGatewayConfig(): GatewayConfig {
       // `stripPrefix: ''`. UNA REGLA EXPLÍCITA POR MÉTODO Y RUTA, cada una con su plugin y su permiso, y SIN regla general al final:
       // lo que no está aquí responde 404 desde el gateway y nunca llega al servicio. Un `ANY /treasury/*` dejaría pasar con solo el
       // plugin cualquier ruta futura (una de escritura incluida) hasta que alguien se acordara de añadirle permiso.
-      // Hono usa la PRIMERA regla que coincide: `aging` va antes que `receivables/*` (si no, «aging» se leería como un id).
+      // Hono usa la PRIMERA regla que coincide: `aging` va antes que `receivables/:id` (si no, «aging» se leería como un id). Los ids son
+      // `:id` (UN segmento) y no `*`: un `*` al final también coincide con rutas más profundas (`receipts/x/post`) y las dejaría llegar al servicio.
       { method: 'GET', path: '/treasury/receivables/aging', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
-      { method: 'GET', path: '/treasury/receivables/*', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
+      { method: 'GET', path: '/treasury/receivables/:id', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
       { method: 'GET', path: '/treasury/receivables', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
-      { method: 'GET', path: '/treasury/customers/*/statement', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
-      { method: 'GET', path: '/treasury/customers/*/terms', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
-      { method: 'PUT', path: '/treasury/customers/*/terms', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'customer_terms:manage', maxBodyBytes: 16 * 1024 },
+      { method: 'GET', path: '/treasury/customers/:id/statement', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
+      { method: 'GET', path: '/treasury/customers/:id/terms', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
+      { method: 'PUT', path: '/treasury/customers/:id/terms', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'customer_terms:manage', maxBodyBytes: 16 * 1024 },
       { method: 'POST', path: '/treasury/opening-balances', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'opening_balance:load', maxBodyBytes: 256 * 1024 },
+      // Cobros (bloque B). Crear, editar un borrador y contabilizar van con `receipt:create`; anular es aparte (`receipt:void`).
+      { method: 'GET', path: '/treasury/receipts', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receipt:read' },
+      { method: 'GET', path: '/treasury/receipts/:id', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receipt:read' },
+      { method: 'POST', path: '/treasury/receipts', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receipt:create', maxBodyBytes: 256 * 1024 },
+      { method: 'PUT', path: '/treasury/receipts/:id', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receipt:create', maxBodyBytes: 256 * 1024 },
+      { method: 'POST', path: '/treasury/receipts/:id/post', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receipt:create' },
+      { method: 'POST', path: '/treasury/receipts/:id/void', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receipt:void', maxBodyBytes: 16 * 1024 },
 
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 

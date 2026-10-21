@@ -72,11 +72,17 @@ function gateway(plugins: Array<{ pluginCode: string; status: string }> = []) {
 const RUTAS: { method: string; path: string; patron: string; permiso: string; body?: string }[] = [
   { method: 'GET', path: '/treasury/receivables', patron: '/treasury/receivables', permiso: 'receivable:read' },
   { method: 'GET', path: '/treasury/receivables/aging', patron: '/treasury/receivables/aging', permiso: 'receivable:read' },
-  { method: 'GET', path: `/treasury/receivables/${ID}`, patron: '/treasury/receivables/*', permiso: 'receivable:read' },
-  { method: 'GET', path: `/treasury/customers/${ID}/statement`, patron: '/treasury/customers/*/statement', permiso: 'receivable:read' },
-  { method: 'GET', path: `/treasury/customers/${ID}/terms`, patron: '/treasury/customers/*/terms', permiso: 'receivable:read' },
-  { method: 'PUT', path: `/treasury/customers/${ID}/terms`, patron: '/treasury/customers/*/terms', permiso: 'customer_terms:manage', body: '{"creditDays":30,"creditLimitCents":null}' },
+  { method: 'GET', path: `/treasury/receivables/${ID}`, patron: '/treasury/receivables/:id', permiso: 'receivable:read' },
+  { method: 'GET', path: `/treasury/customers/${ID}/statement`, patron: '/treasury/customers/:id/statement', permiso: 'receivable:read' },
+  { method: 'GET', path: `/treasury/customers/${ID}/terms`, patron: '/treasury/customers/:id/terms', permiso: 'receivable:read' },
+  { method: 'PUT', path: `/treasury/customers/${ID}/terms`, patron: '/treasury/customers/:id/terms', permiso: 'customer_terms:manage', body: '{"creditDays":30,"creditLimitCents":null}' },
   { method: 'POST', path: '/treasury/opening-balances', patron: '/treasury/opening-balances', permiso: 'opening_balance:load', body: '{"cutoffDate":"2026-10-01","reason":"inicio","lines":[]}' },
+  { method: 'GET', path: '/treasury/receipts', patron: '/treasury/receipts', permiso: 'receipt:read' },
+  { method: 'GET', path: `/treasury/receipts/${ID}`, patron: '/treasury/receipts/:id', permiso: 'receipt:read' },
+  { method: 'POST', path: '/treasury/receipts', patron: '/treasury/receipts', permiso: 'receipt:create', body: '{}' },
+  { method: 'PUT', path: `/treasury/receipts/${ID}`, patron: '/treasury/receipts/:id', permiso: 'receipt:create', body: '{}' },
+  { method: 'POST', path: `/treasury/receipts/${ID}/post`, patron: '/treasury/receipts/:id/post', permiso: 'receipt:create' },
+  { method: 'POST', path: `/treasury/receipts/${ID}/void`, patron: '/treasury/receipts/:id/void', permiso: 'receipt:void', body: '{"reason":"duplicado"}' },
 ];
 
 const llamar = (app: ReturnType<typeof gateway>, r: { method: string; path: string; body?: string }, headers: Record<string, string> = h) =>
@@ -111,7 +117,7 @@ describe('declaración de /treasury/* en el gateway', () => {
 
   it('`aging` va antes que `receivables/*` (si no, «aging» se leería como un id)', () => {
     const reglas = buildGatewayConfig().routes.filter((r) => r.service === 'treasury-service');
-    expect(reglas.findIndex((r) => r.path === '/treasury/receivables/aging')).toBeLessThan(reglas.findIndex((r) => r.path === '/treasury/receivables/*'));
+    expect(reglas.findIndex((r) => r.path === '/treasury/receivables/aging')).toBeLessThan(reglas.findIndex((r) => r.path === '/treasury/receivables/:id'));
   });
 });
 
@@ -148,7 +154,7 @@ describe('permisos en el gateway', () => {
   it.each(RUTAS)('$method $path exige $permiso: sin él 403 y no llega al servicio; con él pasa', async (ruta) => {
     const app = gateway([TREASURY_PLUGIN]);
     recibidas = [];
-    permisosToken = ['invoice:read', 'receivable:read', 'customer_terms:manage', 'opening_balance:load'].filter((p) => p !== ruta.permiso);
+    permisosToken = ['invoice:read', 'receivable:read', 'customer_terms:manage', 'opening_balance:load', 'receipt:read', 'receipt:create', 'receipt:void'].filter((p) => p !== ruta.permiso);
     expect((await llamar(app, ruta)).status).toBe(403);
     expect(recibidas).toEqual([]);
 
@@ -182,7 +188,7 @@ describe('lo que NO está declarado no llega al servicio', () => {
     recibidas = [];
     permisosToken = ['*'];
     const app = gateway([TREASURY_PLUGIN]);
-    for (const [method, path] of [['GET', '/treasury/otra-cosa'], ['GET', '/treasury'], ['POST', '/treasury/receipts'], ['GET', '/treasury/receipts'], ['POST', '/treasury/payments']] as const) {
+    for (const [method, path] of [['GET', '/treasury/otra-cosa'], ['GET', '/treasury'], ['DELETE', '/treasury/receipts/x'], ['PATCH', '/treasury/receipts/x'], ['POST', '/treasury/payments'], ['GET', '/treasury/receipts/x/post']] as const) {
       expect((await app.request(`http://gw${path}`, { method, headers: h }, env)).status, `${method} ${path}`).toBe(404);
     }
     expect(recibidas).toEqual([]);
@@ -221,5 +227,27 @@ describe('lo que NO está declarado no llega al servicio', () => {
     const res = await app.request('http://gw/treasury/opening-balances', { method: 'POST', headers: { ...h, 'content-length': String(grande.length) }, body: grande }, env);
     expect(res.status).toBe(413);
     expect(recibidas).toEqual([]);
+  });
+});
+
+describe('cobros: separación de funciones en el gateway', () => {
+  it('quien tiene `receipt:create` (cobrar, contabilizar) NO puede anular: el gateway lo corta con 403 y no llega al servicio', async () => {
+    recibidas = [];
+    permisosToken = ['receipt:read', 'receipt:create'];
+    const app = gateway([TREASURY_PLUGIN]);
+    expect((await app.request(`http://gw/treasury/receipts/${ID}/post`, { method: 'POST', headers: h }, env)).status).toBe(200);
+    recibidas = [];
+    expect((await app.request(`http://gw/treasury/receipts/${ID}/void`, { method: 'POST', headers: h, body: '{"reason":"intento"}' }, env)).status).toBe(403);
+    expect(recibidas).toEqual([]);
+  });
+
+  it('el rol de solo lectura ve los cobros pero no crea ni contabiliza', async () => {
+    recibidas = [];
+    permisosToken = ['receipt:read'];
+    const app = gateway([TREASURY_PLUGIN]);
+    expect((await app.request('http://gw/treasury/receipts', { headers: h }, env)).status).toBe(200);
+    expect((await app.request('http://gw/treasury/receipts', { method: 'POST', headers: h, body: '{}' }, env)).status).toBe(403);
+    expect((await app.request(`http://gw/treasury/receipts/${ID}/post`, { method: 'POST', headers: h }, env)).status).toBe(403);
+    expect(recibidas).toHaveLength(1);
   });
 });

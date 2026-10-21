@@ -28,6 +28,7 @@ const envSchema = z.object({
   RESTAURANT_SERVICE_URL: z.string().url().optional(),
   ACCOUNTING_SERVICE_URL: z.string().url().optional(),
   PURCHASING_SERVICE_URL: z.string().url().optional(),
+  TREASURY_SERVICE_URL: z.string().url().optional(),
   // Colector OTLP/HTTP al que se reenvía la telemetría del navegador (`POST /telemetry/v1/traces`). Sin él, la ruta no existe.
   TELEMETRY_COLLECTOR_URL: z.string().url().optional(),
 

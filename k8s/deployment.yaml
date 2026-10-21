@@ -54,6 +54,9 @@ spec:
             # Compras (`inventory.suppliers`, `purchasing.purchase_orders`). Sin esta variable el gateway no registra /purchasing/*.
             - name: PURCHASING_SERVICE_URL
               value: "http://purchasing-service-node:3017"
+            # Tesorería / Cuentas por cobrar (Fase 3). Sin esta variable el gateway no registra /treasury/*.
+            - name: TREASURY_SERVICE_URL
+              value: "http://treasury-service-node:3018"
             - name: TAX_SERVICE_URL
               value: "http://tax-service:3005"
             - name: DOCUMENT_SERVICE_URL

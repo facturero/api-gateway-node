@@ -49,6 +49,7 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.RESTAURANT_SERVICE_URL) services.push({ name: 'restaurant-service', url: env.RESTAURANT_SERVICE_URL });
   if (env.ACCOUNTING_SERVICE_URL) services.push({ name: 'accounting-service', url: env.ACCOUNTING_SERVICE_URL });
   if (env.PURCHASING_SERVICE_URL) services.push({ name: 'purchasing-service', url: env.PURCHASING_SERVICE_URL });
+  if (env.TREASURY_SERVICE_URL) services.push({ name: 'treasury-service', url: env.TREASURY_SERVICE_URL });
   if (env.TELEMETRY_COLLECTOR_URL) services.push({ name: 'otel-collector', url: env.TELEMETRY_COLLECTOR_URL });
   const pluginActivations = env.PLUGIN_CATALOG_SERVICE_URL
     ? new PluginActivationCache(env.PLUGIN_CATALOG_SERVICE_URL)
@@ -233,6 +234,19 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'POST', path: '/purchasing/bills/*/post', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:create' },
       { method: 'POST', path: '/purchasing/bills/*/override', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:override' },
       { method: 'POST', path: '/purchasing/bills/*/void', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:void' },
+
+      // Tesorería / Cuentas por cobrar (Fase 3 bloque A). El servicio sirve sus rutas con el prefijo `/treasury`, por eso
+      // `stripPrefix: ''`. UNA REGLA EXPLÍCITA POR MÉTODO Y RUTA, cada una con su plugin y su permiso, y SIN regla general al final:
+      // lo que no está aquí responde 404 desde el gateway y nunca llega al servicio. Un `ANY /treasury/*` dejaría pasar con solo el
+      // plugin cualquier ruta futura (una de escritura incluida) hasta que alguien se acordara de añadirle permiso.
+      // Hono usa la PRIMERA regla que coincide: `aging` va antes que `receivables/*` (si no, «aging» se leería como un id).
+      { method: 'GET', path: '/treasury/receivables/aging', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
+      { method: 'GET', path: '/treasury/receivables/*', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
+      { method: 'GET', path: '/treasury/receivables', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
+      { method: 'GET', path: '/treasury/customers/*/statement', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
+      { method: 'GET', path: '/treasury/customers/*/terms', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'receivable:read' },
+      { method: 'PUT', path: '/treasury/customers/*/terms', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'customer_terms:manage', maxBodyBytes: 16 * 1024 },
+      { method: 'POST', path: '/treasury/opening-balances', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'opening_balance:load', maxBodyBytes: 256 * 1024 },
 
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 

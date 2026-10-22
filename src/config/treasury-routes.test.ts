@@ -90,6 +90,23 @@ const RUTAS: { method: string; path: string; patron: string; permiso: string; bo
   { method: 'PUT', path: '/treasury/reminders/settings', patron: '/treasury/reminders/settings', permiso: 'reminder:manage', body: '{}' },
   { method: 'GET', path: '/treasury/reminders/preview', patron: '/treasury/reminders/preview', permiso: 'reminder:manage' },
   { method: 'POST', path: '/treasury/reminders/run', patron: '/treasury/reminders/run', permiso: 'reminder:manage' },
+  { method: 'GET', path: '/treasury/payables', patron: '/treasury/payables', permiso: 'payable:read' },
+  { method: 'GET', path: `/treasury/payables/${ID}`, patron: '/treasury/payables/:id', permiso: 'payable:read' },
+  { method: 'GET', path: '/treasury/payables/aging', patron: '/treasury/payables/aging', permiso: 'payable:read' },
+  { method: 'GET', path: '/treasury/payables/export', patron: '/treasury/payables/export', permiso: 'payable:export' },
+  { method: 'GET', path: '/treasury/payables/aging/export', patron: '/treasury/payables/aging/export', permiso: 'payable:export' },
+  { method: 'GET', path: `/treasury/suppliers/${ID}/statement`, patron: '/treasury/suppliers/:id/statement', permiso: 'payable:read' },
+  { method: 'GET', path: `/treasury/suppliers/${ID}/statement/export`, patron: '/treasury/suppliers/:id/statement/export', permiso: 'payable:export' },
+  { method: 'POST', path: '/treasury/payable-opening-balances', patron: '/treasury/payable-opening-balances', permiso: 'opening_balance:load', body: '{}' },
+  { method: 'GET', path: '/treasury/payments', patron: '/treasury/payments', permiso: 'payment:read' },
+  { method: 'GET', path: '/treasury/payments/settings', patron: '/treasury/payments/settings', permiso: 'payment:approve' },
+  { method: 'PUT', path: '/treasury/payments/settings', patron: '/treasury/payments/settings', permiso: 'payment:approve', body: '{}' },
+  { method: 'GET', path: `/treasury/payments/${ID}`, patron: '/treasury/payments/:id', permiso: 'payment:read' },
+  { method: 'POST', path: '/treasury/payments', patron: '/treasury/payments', permiso: 'payment:create', body: '{}' },
+  { method: 'PUT', path: `/treasury/payments/${ID}`, patron: '/treasury/payments/:id', permiso: 'payment:create', body: '{}' },
+  { method: 'POST', path: `/treasury/payments/${ID}/approve`, patron: '/treasury/payments/:id/approve', permiso: 'payment:approve' },
+  { method: 'POST', path: `/treasury/payments/${ID}/post`, patron: '/treasury/payments/:id/post', permiso: 'payment:create' },
+  { method: 'POST', path: `/treasury/payments/${ID}/void`, patron: '/treasury/payments/:id/void', permiso: 'payment:void', body: '{"reason":"duplicado"}' },
 ];
 
 const llamar = (app: ReturnType<typeof gateway>, r: { method: string; path: string; body?: string }, headers: Record<string, string> = h) =>
@@ -195,7 +212,7 @@ describe('lo que NO está declarado no llega al servicio', () => {
     recibidas = [];
     permisosToken = ['*'];
     const app = gateway([TREASURY_PLUGIN]);
-    for (const [method, path] of [['GET', '/treasury/otra-cosa'], ['GET', '/treasury'], ['DELETE', '/treasury/receipts/x'], ['PATCH', '/treasury/receipts/x'], ['POST', '/treasury/payments'], ['GET', '/treasury/receipts/x/post']] as const) {
+    for (const [method, path] of [['GET', '/treasury/otra-cosa'], ['GET', '/treasury'], ['DELETE', '/treasury/receipts/x'], ['PATCH', '/treasury/receipts/x'], ['POST', '/treasury/payables'], ['GET', '/treasury/receipts/x/post'], ['DELETE', '/treasury/payments/x'], ['GET', '/treasury/payments/x/post'], ['POST', '/treasury/payables/x/pay'], ['PATCH', '/treasury/payments/settings'], ['GET', '/treasury/suppliers/x/statement/otra']] as const) {
       expect((await app.request(`http://gw${path}`, { method, headers: h }, env)).status, `${method} ${path}`).toBe(404);
     }
     expect(recibidas).toEqual([]);

@@ -264,6 +264,25 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'PUT', path: '/treasury/reminders/settings', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'reminder:manage', maxBodyBytes: 16 * 1024 },
       { method: 'GET', path: '/treasury/reminders/preview', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'reminder:manage' },
       { method: 'POST', path: '/treasury/reminders/run', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'reminder:manage' },
+      // Cuentas por pagar y pagos (bloque D). Mismas defensas: una regla por método y ruta, `:id` (un segmento) y las rutas fijas
+      // (`export`, `aging`, `settings`) ANTES de `/:id`. Pagar (`payment:create`) y aprobar (`payment:approve`) son permisos distintos.
+      { method: 'GET', path: '/treasury/payables/export', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payable:export' },
+      { method: 'GET', path: '/treasury/payables/aging/export', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payable:export' },
+      { method: 'GET', path: '/treasury/payables/aging', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payable:read' },
+      { method: 'GET', path: '/treasury/payables/:id', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payable:read' },
+      { method: 'GET', path: '/treasury/payables', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payable:read' },
+      { method: 'GET', path: '/treasury/suppliers/:id/statement/export', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payable:export' },
+      { method: 'GET', path: '/treasury/suppliers/:id/statement', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payable:read' },
+      { method: 'POST', path: '/treasury/payable-opening-balances', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'opening_balance:load', maxBodyBytes: 256 * 1024 },
+      { method: 'GET', path: '/treasury/payments/settings', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payment:approve' },
+      { method: 'PUT', path: '/treasury/payments/settings', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payment:approve', maxBodyBytes: 16 * 1024 },
+      { method: 'GET', path: '/treasury/payments', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payment:read' },
+      { method: 'GET', path: '/treasury/payments/:id', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payment:read' },
+      { method: 'POST', path: '/treasury/payments', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payment:create', maxBodyBytes: 256 * 1024 },
+      { method: 'PUT', path: '/treasury/payments/:id', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payment:create', maxBodyBytes: 256 * 1024 },
+      { method: 'POST', path: '/treasury/payments/:id/approve', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payment:approve' },
+      { method: 'POST', path: '/treasury/payments/:id/post', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payment:create' },
+      { method: 'POST', path: '/treasury/payments/:id/void', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'payment:void', maxBodyBytes: 16 * 1024 },
 
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 

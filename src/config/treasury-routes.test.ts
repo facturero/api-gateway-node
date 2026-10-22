@@ -107,6 +107,29 @@ const RUTAS: { method: string; path: string; patron: string; permiso: string; bo
   { method: 'POST', path: `/treasury/payments/${ID}/approve`, patron: '/treasury/payments/:id/approve', permiso: 'payment:approve' },
   { method: 'POST', path: `/treasury/payments/${ID}/post`, patron: '/treasury/payments/:id/post', permiso: 'payment:create' },
   { method: 'POST', path: `/treasury/payments/${ID}/void`, patron: '/treasury/payments/:id/void', permiso: 'payment:void', body: '{"reason":"duplicado"}' },
+  { method: 'GET', path: '/treasury/bank-accounts', patron: '/treasury/bank-accounts', permiso: 'bank_account:read' },
+  { method: 'POST', path: '/treasury/bank-accounts', patron: '/treasury/bank-accounts', permiso: 'bank_account:manage', body: '{}' },
+  { method: 'GET', path: `/treasury/bank-accounts/${ID}`, patron: '/treasury/bank-accounts/:id', permiso: 'bank_account:read' },
+  { method: 'PUT', path: `/treasury/bank-accounts/${ID}`, patron: '/treasury/bank-accounts/:id', permiso: 'bank_account:manage', body: '{}' },
+  { method: 'POST', path: `/treasury/bank-accounts/${ID}/statements/preview`, patron: '/treasury/bank-accounts/:id/statements/preview', permiso: 'bank_account:manage', body: '{}' },
+  { method: 'POST', path: `/treasury/bank-accounts/${ID}/statements`, patron: '/treasury/bank-accounts/:id/statements', permiso: 'bank_account:manage', body: '{}' },
+  { method: 'GET', path: `/treasury/bank-accounts/${ID}/lines`, patron: '/treasury/bank-accounts/:id/lines', permiso: 'bank_account:read' },
+  { method: 'GET', path: `/treasury/bank-accounts/${ID}/suggestions`, patron: '/treasury/bank-accounts/:id/suggestions', permiso: 'bank_account:read' },
+  { method: 'GET', path: `/treasury/bank-accounts/${ID}/reconciliation`, patron: '/treasury/bank-accounts/:id/reconciliation', permiso: 'bank_account:read' },
+  { method: 'GET', path: `/treasury/bank-accounts/${ID}/reconciliations`, patron: '/treasury/bank-accounts/:id/reconciliations', permiso: 'bank_account:read' },
+  { method: 'POST', path: `/treasury/bank-accounts/${ID}/reconciliations`, patron: '/treasury/bank-accounts/:id/reconciliations', permiso: 'reconciliation:manage', body: '{}' },
+  { method: 'POST', path: `/treasury/bank-reconciliations/${ID}/reopen`, patron: '/treasury/bank-reconciliations/:id/reopen', permiso: 'reconciliation:manage', body: '{}' },
+  { method: 'GET', path: '/treasury/bank-movements', patron: '/treasury/bank-movements', permiso: 'bank_account:read' },
+  { method: 'POST', path: `/treasury/bank-movements/${ID}/account`, patron: '/treasury/bank-movements/:id/account', permiso: 'bank_account:manage', body: '{}' },
+  { method: 'POST', path: '/treasury/bank-lines/match', patron: '/treasury/bank-lines/match', permiso: 'reconciliation:manage', body: '{}' },
+  { method: 'POST', path: `/treasury/bank-lines/${ID}/match`, patron: '/treasury/bank-lines/:id/match', permiso: 'reconciliation:manage', body: '{}' },
+  { method: 'POST', path: `/treasury/bank-lines/${ID}/unmatch`, patron: '/treasury/bank-lines/:id/unmatch', permiso: 'reconciliation:manage' },
+  { method: 'POST', path: `/treasury/bank-lines/${ID}/external`, patron: '/treasury/bank-lines/:id/external', permiso: 'reconciliation:manage', body: '{}' },
+  { method: 'POST', path: `/treasury/bank-lines/${ID}/unexternal`, patron: '/treasury/bank-lines/:id/unexternal', permiso: 'reconciliation:manage' },
+  { method: 'POST', path: '/treasury/bank-adjustments', patron: '/treasury/bank-adjustments', permiso: 'reconciliation:manage', body: '{}' },
+  { method: 'POST', path: `/treasury/bank-adjustments/${ID}/void`, patron: '/treasury/bank-adjustments/:id/void', permiso: 'reconciliation:manage', body: '{}' },
+  { method: 'GET', path: '/treasury/cash-flow/export', patron: '/treasury/cash-flow/export', permiso: 'bank_account:read' },
+  { method: 'GET', path: '/treasury/cash-flow', patron: '/treasury/cash-flow', permiso: 'bank_account:read' },
 ];
 
 const llamar = (app: ReturnType<typeof gateway>, r: { method: string; path: string; body?: string }, headers: Record<string, string> = h) =>
@@ -137,6 +160,18 @@ describe('declaración de /treasury/* en el gateway', () => {
       expect(regla, `${ruta.method} ${ruta.patron}`).toMatchObject({ permission: ruta.permiso, service: 'treasury-service' });
     }
     expect(config.routes.find((r) => r.path === '/treasury/opening-balances')).toMatchObject({ maxBodyBytes: 256 * 1024 });
+  });
+
+  it('el extracto del banco admite un cuerpo grande (CSV dentro del JSON) y SOLO esas dos rutas; el resto de bancos, uno chico', () => {
+    const reglas = buildGatewayConfig().routes.filter((r) => r.service === 'treasury-service');
+    const grandes = reglas.filter((r) => (r.maxBodyBytes ?? 0) > 1024 * 1024).map((r) => `${r.method} ${r.path}`).sort();
+    expect(grandes).toEqual(['POST /treasury/bank-accounts/:id/statements', 'POST /treasury/bank-accounts/:id/statements/preview']);
+    expect(reglas.find((r) => r.path === '/treasury/bank-lines/:id/external')).toMatchObject({ maxBodyBytes: 16 * 1024 });
+  });
+
+  it('`/bank-lines/match` y `/cash-flow/export` van antes que sus rutas con `:id` y `/cash-flow`', () => {
+    const reglas = buildGatewayConfig().routes.filter((r) => r.service === 'treasury-service');
+    expect(reglas.findIndex((r) => r.path === '/treasury/cash-flow/export')).toBeLessThan(reglas.findIndex((r) => r.path === '/treasury/cash-flow'));
   });
 
   it('`aging` va antes que `receivables/*` (si no, «aging» se leería como un id)', () => {

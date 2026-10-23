@@ -50,6 +50,7 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.ACCOUNTING_SERVICE_URL) services.push({ name: 'accounting-service', url: env.ACCOUNTING_SERVICE_URL });
   if (env.PURCHASING_SERVICE_URL) services.push({ name: 'purchasing-service', url: env.PURCHASING_SERVICE_URL });
   if (env.TREASURY_SERVICE_URL) services.push({ name: 'treasury-service', url: env.TREASURY_SERVICE_URL });
+  if (env.REPORTING_SERVICE_URL) services.push({ name: 'reporting-service', url: env.REPORTING_SERVICE_URL });
   if (env.TELEMETRY_COLLECTOR_URL) services.push({ name: 'otel-collector', url: env.TELEMETRY_COLLECTOR_URL });
   const pluginActivations = env.PLUGIN_CATALOG_SERVICE_URL
     ? new PluginActivationCache(env.PLUGIN_CATALOG_SERVICE_URL)
@@ -307,6 +308,18 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'POST', path: '/treasury/bank-adjustments/:id/void', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'reconciliation:manage', maxBodyBytes: 16 * 1024 },
       { method: 'GET', path: '/treasury/cash-flow/export', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'bank_account:read' },
       { method: 'GET', path: '/treasury/cash-flow', service: 'treasury-service', stripPrefix: '', requiresPlugin: 'finance.accounts_receivable_payable', permission: 'bank_account:read' },
+
+      // Anexos del SRI (ATS, formularios 103 y 104). El servicio sirve sus rutas con el prefijo `/reporting`, por eso `stripPrefix` va vacío.
+      // UNA regla por método y ruta, sin `/reporting/*`: lo que no está aquí responde 404 desde el gateway y nunca llega al servicio.
+      // Descargar (`tax_annex:export`) es un permiso aparte de ver y de generar. `/runs/:id/export` va antes que `/runs/:id`.
+      { method: 'GET', path: '/reporting/annexes/runs', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:read' },
+      { method: 'GET', path: '/reporting/annexes/runs/:id/export', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:export' },
+      { method: 'GET', path: '/reporting/annexes/runs/:id', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:read' },
+      { method: 'POST', path: '/reporting/annexes/:annex/:period/generate', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:generate', maxBodyBytes: 4 * 1024 },
+      { method: 'GET', path: '/reporting/annexes/:annex/:period/reconciliation', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:read' },
+      { method: 'GET', path: '/reporting/annexes/:annex/:period/manual-inputs', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:read' },
+      { method: 'PUT', path: '/reporting/annexes/:annex/:period/manual-inputs/:fieldCode', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:generate', maxBodyBytes: 4 * 1024 },
+      { method: 'GET', path: '/reporting/documents', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:read' },
 
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 

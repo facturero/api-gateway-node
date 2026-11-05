@@ -51,6 +51,7 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.PURCHASING_SERVICE_URL) services.push({ name: 'purchasing-service', url: env.PURCHASING_SERVICE_URL });
   if (env.TREASURY_SERVICE_URL) services.push({ name: 'treasury-service', url: env.TREASURY_SERVICE_URL });
   if (env.REPORTING_SERVICE_URL) services.push({ name: 'reporting-service', url: env.REPORTING_SERVICE_URL });
+  if (env.PROJECTS_SERVICE_URL) services.push({ name: 'projects-service', url: env.PROJECTS_SERVICE_URL });
   if (env.TELEMETRY_COLLECTOR_URL) services.push({ name: 'otel-collector', url: env.TELEMETRY_COLLECTOR_URL });
   const pluginActivations = env.PLUGIN_CATALOG_SERVICE_URL
     ? new PluginActivationCache(env.PLUGIN_CATALOG_SERVICE_URL)
@@ -320,6 +321,21 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'GET', path: '/reporting/annexes/:annex/:period/manual-inputs', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:read' },
       { method: 'PUT', path: '/reporting/annexes/:annex/:period/manual-inputs/:fieldCode', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:generate', maxBodyBytes: 4 * 1024 },
       { method: 'GET', path: '/reporting/documents', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:read' },
+
+      // Proyectos y tareas al estilo Asana (`projects.tasks_kanban`). UNA regla con comodín, a diferencia de tesorería o anexos: el
+      // gateway exige el módulo y `project:read` (usar el módulo), y TODO lo demás lo decide el rol del usuario DENTRO de cada
+      // proyecto (admin / editor / comentarista / lector), que solo projects-service conoce. Un permiso por ruta aquí duplicaría esa
+      // decisión con otra más gruesa. Horas (`projects.time_tracking`) y carga de trabajo (`projects.resource_allocation`) son
+      // módulos que se compran aparte: sus rutas van ANTES del comodín (gana la primera regla que coincide) y exigen además su
+      // módulo. Quién ve las horas de quién lo decide projects-service (`time_entry:read_all`).
+      // Facturar el proyecto (entregable 6): módulo propio y `project:bill` (Administrador, Contador) ya en el gateway, porque toda la
+      // pestaña muestra tarifas e importes.
+      { method: 'ANY', path: '/projects/billing/*', service: 'projects-service', stripPrefix: '', requiresPlugin: 'projects.project_billing', permission: 'project:bill', maxBodyBytes: 16 * 1024 },
+      { method: 'ANY', path: '/projects/time-entries', service: 'projects-service', stripPrefix: '', requiresPlugin: 'projects.time_tracking', permission: 'project:read', maxBodyBytes: 16 * 1024 },
+      { method: 'ANY', path: '/projects/time-entries/*', service: 'projects-service', stripPrefix: '', requiresPlugin: 'projects.time_tracking', permission: 'project:read', maxBodyBytes: 16 * 1024 },
+      { method: 'GET', path: '/projects/workload', service: 'projects-service', stripPrefix: '', requiresPlugin: 'projects.resource_allocation', permission: 'project:read' },
+      { method: 'ANY', path: '/projects/workload/*', service: 'projects-service', stripPrefix: '', requiresPlugin: 'projects.resource_allocation', permission: 'project:read', maxBodyBytes: 4 * 1024 },
+      { method: 'ANY', path: '/projects/*', service: 'projects-service', stripPrefix: '', requiresPlugin: 'projects.tasks_kanban', permission: 'project:read', maxBodyBytes: 64 * 1024 },
 
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 

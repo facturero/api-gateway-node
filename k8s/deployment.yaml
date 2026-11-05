@@ -57,6 +57,9 @@ spec:
             # Tesorería / Cuentas por cobrar (Fase 3). Sin esta variable el gateway no registra /treasury/*.
             - name: TREASURY_SERVICE_URL
               value: "http://treasury-service-node:3018"
+            # Proyectos y tareas (`projects.tasks_kanban`). Sin esta variable el gateway no registra /projects/*: responde 500 SERVICE_NOT_FOUND.
+            - name: PROJECTS_SERVICE_URL
+              value: "http://projects-service-node:3020"
             - name: TAX_SERVICE_URL
               value: "http://tax-service:3005"
             - name: DOCUMENT_SERVICE_URL

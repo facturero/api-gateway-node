@@ -5,6 +5,7 @@ import type { Authenticator } from '../core/types';
 import type { NotificationGate } from './notification-gate';
 import { posThemeRooms, posThemeSocketPayload } from './pos-theme-routing';
 import { catalogRoutingOrgs } from './catalog-routing';
+import { projectsChangedMessage } from './projects-routing';
 const EXCHANGE = 'crm.events';
 const ROOM_PREFIX = 'catalog:';
 const DEVICE_ROOM_PREFIX = 'device:';
@@ -155,6 +156,8 @@ async function startRealtimeConsumer(
       await channel.bindQueue(queue, EXCHANGE, 'identity.#');
       await channel.bindQueue(queue, EXCHANGE, 'billing.invoice.#');
       await channel.bindQueue(queue, EXCHANGE, 'fiscal.ec.invoice.attention_required');
+      // Proyectos y tareas: tablero en vivo (aviso mínimo a la organización) y campana de sus destinatarios. Ver projects-routing.ts.
+      await channel.bindQueue(queue, EXCHANGE, 'projects.#');
 
       channel.consume(queue, (msg: ConsumeMessage | null) => {
         if (!msg) return;
@@ -164,7 +167,7 @@ async function startRealtimeConsumer(
         });
       });
 
-      console.log('[realtime] consumidor crm.events activo (product.product.*, product.category.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required)');
+      console.log('[realtime] consumidor crm.events activo (product.product.*, product.category.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required, projects.*)');
     } catch (err) {
       console.error('[realtime] no se pudo conectar a RabbitMQ, reintentando en 5s:', err);
       setTimeout(connectLoop, 5_000);
@@ -220,6 +223,16 @@ async function handleRealtimeMessage(
   // finance.electronic_invoicing. Sin gate no hay campana. Del resto de
   // `fiscal.ec.invoice.*` no se avisa: son cambios de estado normales o errores
   // que se reintentan solos.
+  if (routingKey.startsWith('projects.')) {
+    const changed = projectsChangedMessage(routingKey, payload);
+    if (changed) io.to(`${ROOM_PREFIX}${changed.organizationId}`).emit('projects.changed', changed.message);
+    // La campana solo para los eventos que notification-service declara como proveedor (el gate lo consulta) y solo a `userIds`.
+    const userIds = extractUserIds(payload);
+    if (notificationGate && userIds.length > 0) await emitProviderNotifications(io, routingKey, payload, userIds, notificationGate);
+    channel.ack(msg);
+    return;
+  }
+
   if (routingKey.startsWith('billing.invoice.') || routingKey === 'fiscal.ec.invoice.attention_required') {
     const userIds = extractUserIds(payload);
     if (!notificationGate || userIds.length === 0) {

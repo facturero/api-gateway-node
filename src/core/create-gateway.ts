@@ -3,28 +3,49 @@ import { cors } from 'hono/cors';
 import { bodyLimit } from 'hono/body-limit';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { httpInstrumentationMiddleware } from '@hono/otel';
-import type { GatewayConfig, RateLimitStore, RouteRule } from './types';
+import type { AuthResult, GatewayConfig, RateLimitStore, RouteRule } from './types';
 import { buildContextHeaders, deriveSpoofHeaders } from './context';
 import { proxyRequest } from './proxy';
 import { errorBody } from './errors';
 import { InMemoryRateLimitStore } from './rate-limit';
 
-function clientIp(c: any): string {
-  // x-forwarded-for/cf-connecting-ip solo existen detrás de un proxy externo
-  // (Cloudflare, LB). Sin ellos, toda petición directa (dev/tests locales)
-  // caía en el literal 'unknown' — un único bucket de rate-limit compartido
-  // por TODO el tráfico, y nunca matcheable contra ninguna IP/CIDR confiable
-  // (ipToNumber('unknown') === null). Fallback a la IP real del socket.
-  const socketIp = getConnInfo(c).remote.address;
-  return (
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ??
-    c.req.header('cf-connecting-ip') ??
-    // Node reporta conexiones IPv4 sobre un socket dual-stack como IPv4
-    // mapeada a IPv6 (::ffff:172.18.0.1) — sin desmapear, ipToNumber()
-    // (que espera un dotted-quad puro) la rechaza y nunca matchea CIDR.
-    socketIp?.replace(/^::ffff:/, '') ??
-    'unknown'
-  );
+/**
+ * Por defecto, cualquier conexión desde una red privada. En producción el túnel llega así: cloudflared (servicio del host) →
+ * proxy TCP en 127.0.0.1:8080 → NodePort → pod, y el pod ve la IP del nodo o la de la red de k3s, ambas privadas. Desde internet
+ * nadie llega con una IP privada (todo entra por el túnel), así que no se puede falsear `cf-connecting-ip` desde fuera. Lo que
+ * queda: alguien en la red local podría inventarse su IP. Con `TRUSTED_PROXIES` se acota a la IP exacta del proxy.
+ */
+const DEFAULT_TRUSTED_PROXIES = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.1'];
+
+function trustedProxiesFrom(config: GatewayConfig): string[] {
+  if (config.trustedProxies) return config.trustedProxies;
+  const fromEnv = process.env.TRUSTED_PROXIES?.split(',').map((s) => s.trim()).filter(Boolean);
+  return fromEnv?.length ? fromEnv : DEFAULT_TRUSTED_PROXIES;
+}
+
+/**
+ * La IP de quien hace la petición, para el límite por IP y para `X-Client-Ip` (la bitácora la guarda).
+ *
+ * Las cabeceras de IP solo valen si quien conecta es un proxy nuestro (`trustedProxies`): cualquiera puede escribirlas, y antes el
+ * gateway leía la primera de `x-forwarded-for` venga de donde viniera. Mandando una distinta en cada petición se saltaba el límite
+ * por completo y quedaba una IP falsa en la bitácora (medido el 2026-11-09 en local). Desde un proxy nuestro, en este orden:
+ *
+ * 1. `cf-connecting-ip`: la pone el borde de Cloudflare y sobrescribe la que mande el cliente.
+ * 2. La ÚLTIMA entrada de `x-forwarded-for`: cada proxy añade al final la IP que ve, y la de más a la derecha la añadió el nuestro
+ *    (Traefik). Las de la izquierda las escribe el cliente.
+ *
+ * Si no, o si no vienen, la IP del socket. Sin este último paso todo caía en el literal 'unknown': un único bucket compartido por
+ * todo el tráfico y nunca comparable con una IP/CIDR de confianza.
+ */
+export function clientIp(c: any, trustedProxies: string[] = DEFAULT_TRUSTED_PROXIES): string {
+  // Node reporta conexiones IPv4 sobre un socket dual-stack como IPv4 mapeada a IPv6 (::ffff:172.18.0.1) — sin desmapear,
+  // ipToNumber() (que espera un dotted-quad puro) la rechaza y nunca matchea CIDR.
+  const socketIp = getConnInfo(c).remote.address?.replace(/^::ffff:/, '') ?? 'unknown';
+  if (!isIpTrusted(socketIp, trustedProxies)) return socketIp;
+  const cloudflare = c.req.header('cf-connecting-ip')?.trim();
+  if (cloudflare) return cloudflare;
+  const lastHop = c.req.header('x-forwarded-for')?.split(',').map((s: string) => s.trim()).filter(Boolean).pop();
+  return lastHop || socketIp;
 }
 
 function ipToNumber(ip: string): number | null {
@@ -59,6 +80,8 @@ export function createGateway(config: GatewayConfig): Hono {
   const spoofHeaders = deriveSpoofHeaders(config.claimHeaders);
   const rateLimitStore = config.rateLimit?.store ?? new InMemoryRateLimitStore();
   const requestIdHeader = config.requestIdHeader ?? 'X-Request-Id';
+  const proxies = trustedProxiesFrom(config);
+  const ipOf = (c: any) => clientIp(c, proxies);
 
   // ── OTel ──
   if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
@@ -86,15 +109,27 @@ export function createGateway(config: GatewayConfig): Hono {
   }
 
   // ── Rate limit ──
+  // Con sesión válida, el cupo es POR USUARIO (`sub` del token); sin sesión, o con un token que no verifica, por IP. Por IP a
+  // secas, todas las personas de una oficina (cada una con su cuenta, pero detrás del mismo router y la misma IP pública)
+  // compartían un único cupo de RATE_LIMIT_MAX y recibían 429 a la vez. Un token inválido cuenta por IP para que inventar tokens
+  // no abra un cupo nuevo en cada petición. El token se verifica aquí una sola vez y la ruta reutiliza el resultado.
   if (config.rateLimit) {
     app.use('*', async (c, next) => {
       if (config.rateLimit!.skipPaths?.some((prefix) => c.req.path.startsWith(prefix))) return next();
-      const ip = clientIp(c);
+      const ip = ipOf(c);
       const effectiveTrustedIps = config.rateLimit!.trustedIpCache?.getTrustedIps() ?? config.rateLimit!.trustedIps ?? [];
       const isTrusted = isIpTrusted(ip, effectiveTrustedIps);
       const max = isTrusted ? (config.rateLimit!.trustedMax ?? config.rateLimit!.max * 5) : config.rateLimit!.max;
 
-      const { count, resetAt } = await rateLimitStore.hit(ip, config.rateLimit!.windowMs);
+      let key = `ip:${ip}`;
+      if (c.req.header('authorization')) {
+        const auth = await config.authenticator.authenticate((name: string) => c.req.header(name));
+        (c as any).set('authResult', auth);
+        const sub = auth.authenticated ? auth.claims?.sub : undefined;
+        if (typeof sub === 'string' && sub) key = `user:${sub}`;
+      }
+
+      const { count, resetAt } = await rateLimitStore.hit(key, config.rateLimit!.windowMs);
 
       if (count > max) {
         const retryAfter = Math.ceil((resetAt - Date.now()) / 1000);
@@ -123,7 +158,7 @@ export function createGateway(config: GatewayConfig): Hono {
         onError: (c) => c.json(errorBody('PAYLOAD_TOO_LARGE', 'El cuerpo de la petición es demasiado grande.'), 413),
       }));
     }
-    const handler = createRouteHandler(rule, config, spoofHeaders, rateLimitStore);
+    const handler = createRouteHandler(rule, config, spoofHeaders, rateLimitStore, ipOf);
     if (rule.method === 'ANY') {
       app.all(rule.path, handler);
     } else {
@@ -156,11 +191,12 @@ function createRouteHandler(
   config: GatewayConfig,
   spoofHeaders: string[],
   rateLimitStore: RateLimitStore,
+  ipOf: (c: any) => string,
 ) {
   return async (c: any) => {
     // ── Rate limit propio de la ruta (además del global) ──
     if (rule.rateLimit) {
-      const key = `${rule.method}:${rule.path}:${clientIp(c)}`;
+      const key = `${rule.method}:${rule.path}:${ipOf(c)}`;
       const { count, resetAt } = await rateLimitStore.hit(key, rule.rateLimit.windowMs);
 
       if (count > rule.rateLimit.max) {
@@ -176,9 +212,10 @@ function createRouteHandler(
     let claims: Record<string, unknown> | undefined;
 
     if (!rule.public) {
-      const authResult = await config.authenticator.authenticate(
-        (name: string) => c.req.header(name),
-      );
+      // Si el límite global ya verificó el token en esta petición, se reutiliza: verificar un RS256 dos veces no aporta nada.
+      const authResult: AuthResult =
+        (c.get('authResult') as AuthResult | undefined) ??
+        (await config.authenticator.authenticate((name: string) => c.req.header(name)));
       if (!authResult.authenticated) {
         return c.json(
           errorBody('UNAUTHORIZED', authResult.error ?? 'Token inválido o ausente'),
@@ -282,7 +319,7 @@ function createRouteHandler(
     // necesitan para que la bitácora de auditoría registre desde dónde se
     // hizo cada acción. Va después de borrar los headers spoofeables, así que
     // lo que mande el cliente en X-Client-Ip se descarta.
-    contextHeaders['X-Client-Ip'] = clientIp(c);
+    contextHeaders['X-Client-Ip'] = ipOf(c);
     const requestId = (c as any).get('requestId') as string;
 
     return proxyRequest(c, rule, config.services, contextHeaders, spoofHeaders, requestId);

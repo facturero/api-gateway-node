@@ -108,6 +108,12 @@ export interface GatewayConfig {
   pluginGate?: PluginGateConfig;
   requestIdHeader?: string; // por defecto 'X-Request-Id'
   /**
+   * IPs/CIDR de los proxies propios (Traefik, cloudflared) que conectan con el gateway. Solo si la conexión viene de uno de ellos se
+   * creen `cf-connecting-ip` y `x-forwarded-for`; si no, esas cabeceras las escribió el cliente y cuenta la IP del socket. Por
+   * defecto `TRUSTED_PROXIES` (lista separada por comas) o, sin ella, las redes privadas (ver DEFAULT_TRUSTED_PROXIES).
+   */
+  trustedProxies?: string[];
+  /**
    * Cache de permissions-version por usuario. Si está presente, las rutas
    * autenticadas comparan el `pv` del claim con el pv actual (auth-service) y
    * responden 401 TOKEN_STALE cuando el token quedó viejo (BUG #9).

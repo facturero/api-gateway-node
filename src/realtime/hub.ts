@@ -178,6 +178,8 @@ async function startRealtimeConsumer(
       await channel.bindQueue(queue, EXCHANGE, 'projects.#');
       // Mensajería: mensajes, reacciones y cambios de conversaciones a las salas de sus miembros. Ver chat-routing.ts.
       await channel.bindQueue(queue, EXCHANGE, 'chat.#');
+      // Comentarios y mejoras: campana de quien escribió (respuesta, estado, puntos). Solo `userIds`, que feedback-service ya acota.
+      await channel.bindQueue(queue, EXCHANGE, 'feedback.#');
 
       channel.consume(queue, (msg: ConsumeMessage | null) => {
         if (!msg) return;
@@ -187,7 +189,7 @@ async function startRealtimeConsumer(
         });
       });
 
-      console.log('[realtime] consumidor crm.events activo (product.product.*, product.category.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required, projects.*, chat.*)');
+      console.log('[realtime] consumidor crm.events activo (product.product.*, product.category.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required, projects.*, chat.*, feedback.*)');
     } catch (err) {
       console.error('[realtime] no se pudo conectar a RabbitMQ, reintentando en 5s:', err);
       setTimeout(connectLoop, 5_000);
@@ -279,6 +281,15 @@ async function handleRealtimeMessage(
     const changed = projectsChangedMessage(routingKey, payload);
     if (changed) io.to(`${ROOM_PREFIX}${changed.organizationId}`).emit('projects.changed', changed.message);
     // La campana solo para los eventos que notification-service declara como proveedor (el gate lo consulta) y solo a `userIds`.
+    const userIds = extractUserIds(payload);
+    if (notificationGate && userIds.length > 0) await emitProviderNotifications(io, routingKey, payload, userIds, notificationGate);
+    channel.ack(msg);
+    return;
+  }
+
+  // Comentarios y mejoras: solo la campana (el gate deja pasar los proveedores de notification-service; `feedback.item.created` no es
+  // proveedor y viene sin destinatarios). Nada a la sala de la organización: es una conversación entre la persona y la plataforma.
+  if (routingKey.startsWith('feedback.')) {
     const userIds = extractUserIds(payload);
     if (notificationGate && userIds.length > 0) await emitProviderNotifications(io, routingKey, payload, userIds, notificationGate);
     channel.ack(msg);

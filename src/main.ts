@@ -8,6 +8,9 @@ import { createGateway } from './core/create-gateway';
 import { createRealtimeHub } from './realtime/hub';
 import { registerAssistantSocket } from './realtime/assistant-socket';
 import { HttpNotificationGate } from './realtime/notification-gate';
+import { HttpChatMemberSource, HttpChatMessageSource } from './realtime/chat-client';
+import { ChatMembersCache } from './realtime/chat-members';
+import { PresenceRegistry, registerChatSocket } from './realtime/chat-socket';
 
 const env = loadEnv();
 const config = buildGatewayConfig();
@@ -19,6 +22,10 @@ config.rateLimit?.trustedIpCache?.start().catch(() => {});
 // El server HTTP lo creamos nosotros para montar socket.io (/ws) sobre él.
 // El hub autentica con el mismo JWT y reenvía eventos de catálogo por org.
 const httpServer = createAdaptorServer({ fetch: app.fetch }) as HttpServer;
+// Mensajería: presencia (punto verde, @aquí) y miembros para «escribiendo…». Los comparten el hub y `chat-socket.ts`.
+const chatEnabled = !!(env.CHAT_SERVICE_URL && env.CHAT_INTERNAL_SECRET);
+const chatPresence = new PresenceRegistry();
+const chatMembers = chatEnabled ? new ChatMembersCache(new HttpChatMemberSource(env.CHAT_SERVICE_URL!, env.CHAT_INTERNAL_SECRET!)) : undefined;
 const io = createRealtimeHub({
   httpServer,
   authenticator: config.authenticator,
@@ -39,6 +46,10 @@ const io = createRealtimeHub({
   notificationGate: env.NOTIFICATION_SERVICE_URL
     ? new HttpNotificationGate(env.NOTIFICATION_SERVICE_URL)
     : undefined,
+  // Mensajería: los eventos `chat.*` no llevan el texto; el hub lo pide a chat-service para entregarlo por socket.
+  chatMessages: chatEnabled ? new HttpChatMessageSource(env.CHAT_SERVICE_URL!, env.CHAT_INTERNAL_SECRET!) : undefined,
+  chatPresence,
+  chatMembers,
 });
 
 // Canal del asistente por WebSocket: los turnos largos del LLM (más de 30s)
@@ -47,6 +58,7 @@ const io = createRealtimeHub({
 // Como creamos el hub en main.ts y el módulo necesita el `io`, se registra tras
 // crear el hub en vez de dentro de él.
 registerAssistantSocket(io, { assistantServiceUrl: env.ASSISTANT_SERVICE_URL });
+registerChatSocket(io, { presence: chatPresence, members: chatMembers });
 
 httpServer.listen(env.PORT, () => {
   console.log(`Gateway escuchando en http://localhost:${env.PORT}`);

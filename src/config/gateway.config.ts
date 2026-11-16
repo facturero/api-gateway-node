@@ -52,6 +52,8 @@ export function buildGatewayConfig(): GatewayConfig {
   if (env.TREASURY_SERVICE_URL) services.push({ name: 'treasury-service', url: env.TREASURY_SERVICE_URL });
   if (env.REPORTING_SERVICE_URL) services.push({ name: 'reporting-service', url: env.REPORTING_SERVICE_URL });
   if (env.PROJECTS_SERVICE_URL) services.push({ name: 'projects-service', url: env.PROJECTS_SERVICE_URL });
+  if (env.CHAT_SERVICE_URL) services.push({ name: 'chat-service', url: env.CHAT_SERVICE_URL });
+  if (env.FEEDBACK_SERVICE_URL) services.push({ name: 'feedback-service', url: env.FEEDBACK_SERVICE_URL });
   if (env.TELEMETRY_COLLECTOR_URL) services.push({ name: 'otel-collector', url: env.TELEMETRY_COLLECTOR_URL });
   const pluginActivations = env.PLUGIN_CATALOG_SERVICE_URL
     ? new PluginActivationCache(env.PLUGIN_CATALOG_SERVICE_URL)
@@ -352,6 +354,14 @@ export function buildGatewayConfig(): GatewayConfig {
       // obtenía un enlace a cualquier archivo. La interfaz pide GET /files/:id/url
       // con su token; document-service acota a la organización.
       { method: 'ANY', path: '/files/*', service: 'document-service', stripPrefix: '' },
+      // Mensajería al estilo Slack (`comm.internal_chat`, plugin del núcleo: gratis y siempre activo). Sin permiso a propósito: cualquier
+      // miembro de la organización usa el chat; quién lee qué (canales privados, DMs) lo decide chat-service, que responde 404 si no
+      // puede. `/internal/*` de chat-service NO pasa por aquí: lo llama el hub directo con X-Internal-Secret.
+      { method: 'ANY', path: '/chat/*', service: 'chat-service', stripPrefix: '', requiresPlugin: 'comm.internal_chat', maxBodyBytes: 64 * 1024 },
+
+      // Comentarios, mejoras y puntos de fidelidad (feedback-service). Sin módulo ni permiso: cualquiera con sesión manda los suyos; la
+      // bandeja de todas las empresas (`/feedback/admin/*`) la cuida el servicio con `feedback:manage`, de plataforma. Cubre `/feedback`.
+      { method: 'ANY', path: '/feedback/*', service: 'feedback-service', stripPrefix: '', maxBodyBytes: 64 * 1024 },
 
       // MinIO/S3 object store — la URL presigned firmada usa el bucket en el path (path-style),
       // por lo que el URI debe llegar intacto a MinIO (sin stripPrefix).

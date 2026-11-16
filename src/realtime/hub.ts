@@ -6,6 +6,10 @@ import type { NotificationGate } from './notification-gate';
 import { posThemeRooms, posThemeSocketPayload } from './pos-theme-routing';
 import { catalogRoutingOrgs } from './catalog-routing';
 import { projectsChangedMessage } from './projects-routing';
+import { chatPlan } from './chat-routing';
+import type { ChatMessageSource } from './chat-client';
+import type { ChatMembersCache } from './chat-members';
+import type { PresenceRegistry } from './chat-socket';
 const EXCHANGE = 'crm.events';
 const ROOM_PREFIX = 'catalog:';
 const DEVICE_ROOM_PREFIX = 'device:';
@@ -53,6 +57,19 @@ export interface RealtimeHubOptions {
   /** Gate del canal `app` (campana) contra notification-service. Sin esto, no
    *  se reenvían eventos de notificación a la campana (solo permissions.changed). */
   notificationGate?: NotificationGate;
+  /** Mensajería: de dónde traer el mensaje completo (los eventos `chat.*` no llevan el texto). Sin esto, el aviso va sin el mensaje. */
+  chatMessages?: ChatMessageSource;
+  /** Presencia del chat (la llena `chat-socket.ts`): `@aquí` solo avisa a quien está conectado y activo. */
+  chatPresence?: PresenceRegistry;
+  /** Caché de miembros de `chat-socket.ts`: se invalida con `chat.member.*` para que «escribiendo…» deje de llegar a quien salió. */
+  chatMembers?: ChatMembersCache;
+}
+
+/** Lo que el bloque `chat.*` del consumidor necesita: traer el mensaje, la presencia (@aquí) y la caché de miembros. */
+interface ChatDeps {
+  messages?: ChatMessageSource;
+  presence?: PresenceRegistry;
+  members?: ChatMembersCache;
 }
 
 export function createRealtimeHub(options: RealtimeHubOptions): SocketServer {
@@ -123,7 +140,7 @@ export function createRealtimeHub(options: RealtimeHubOptions): SocketServer {
   });
 
   if (options.rabbitmqUrl) {
-    startRealtimeConsumer(io, options.rabbitmqUrl, options.onPluginsChanged, options.onPermissionsChanged, options.notificationGate).catch((err) => {
+    startRealtimeConsumer(io, options.rabbitmqUrl, options.onPluginsChanged, options.onPermissionsChanged, options.notificationGate, { messages: options.chatMessages, presence: options.chatPresence, members: options.chatMembers }).catch((err) => {
       console.error('[realtime] consumidor de eventos falló:', err);
     });
   }
@@ -137,6 +154,7 @@ async function startRealtimeConsumer(
   onPluginsChanged?: (organizationId: string) => void,
   onPermissionsChanged?: (userIds: string[]) => void,
   notificationGate?: NotificationGate,
+  chat?: ChatDeps,
 ): Promise<void> {
   const connectLoop = async (): Promise<void> => {
     try {
@@ -158,16 +176,18 @@ async function startRealtimeConsumer(
       await channel.bindQueue(queue, EXCHANGE, 'fiscal.ec.invoice.attention_required');
       // Proyectos y tareas: tablero en vivo (aviso mínimo a la organización) y campana de sus destinatarios. Ver projects-routing.ts.
       await channel.bindQueue(queue, EXCHANGE, 'projects.#');
+      // Mensajería: mensajes, reacciones y cambios de conversaciones a las salas de sus miembros. Ver chat-routing.ts.
+      await channel.bindQueue(queue, EXCHANGE, 'chat.#');
 
       channel.consume(queue, (msg: ConsumeMessage | null) => {
         if (!msg) return;
-        handleRealtimeMessage(io, channel, msg, onPluginsChanged, onPermissionsChanged, notificationGate).catch((err) => {
+        handleRealtimeMessage(io, channel, msg, onPluginsChanged, onPermissionsChanged, notificationGate, chat).catch((err) => {
           console.error('[realtime] error al procesar evento:', err);
           channel.nack(msg, false, true);
         });
       });
 
-      console.log('[realtime] consumidor crm.events activo (product.product.*, product.category.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required, projects.*)');
+      console.log('[realtime] consumidor crm.events activo (product.product.*, product.category.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required, projects.*, chat.*)');
     } catch (err) {
       console.error('[realtime] no se pudo conectar a RabbitMQ, reintentando en 5s:', err);
       setTimeout(connectLoop, 5_000);
@@ -211,6 +231,7 @@ async function handleRealtimeMessage(
   onPluginsChanged?: (organizationId: string) => void,
   onPermissionsChanged?: (userIds: string[]) => void,
   notificationGate?: NotificationGate,
+  chat?: ChatDeps,
 ): Promise<void> {
   if (!msg.fields || !msg.fields.routingKey) return;
 
@@ -223,6 +244,37 @@ async function handleRealtimeMessage(
   // finance.electronic_invoicing. Sin gate no hay campana. Del resto de
   // `fiscal.ec.invoice.*` no se avisa: son cambios de estado normales o errores
   // que se reintentan solos.
+  if (routingKey.startsWith('chat.')) {
+    const plan = chatPlan(routingKey, payload, ROOM_PREFIX, USER_ROOM_PREFIX);
+    if (!plan) {
+      channel.ack(msg);
+      return;
+    }
+    if (routingKey.startsWith('chat.member.') || routingKey === 'chat.conversation.archived') {
+      chat?.members?.invalidate(plan.organizationId, String(payload.conversationId));
+    }
+    for (const e of plan.emits) io.to(e.room).emit(e.event, e.data);
+    if (plan.deliver) {
+      const d = plan.deliver;
+      // Una sola llamada por mensaje (no por destinatario). Si falla, el aviso va sin `message` y el navegador lo pide por REST.
+      const message = chat?.messages ? await chat.messages.getMessage(plan.organizationId, d.messageId) : null;
+      for (const r of d.recipients) {
+        // @aquí: solo a los conectados y activos según la presencia de chat-socket.ts (sin registro, no avisa).
+        const notify = r.notify || (r.here && !!chat?.presence?.isActive(plan.organizationId, r.userId));
+        io.to(`${USER_ROOM_PREFIX}${r.userId}`).emit(d.event, {
+          messageId: d.messageId,
+          conversationId: d.conversationId,
+          threadRootId: d.threadRootId,
+          notify,
+          ...(message ? { message } : {}),
+        });
+      }
+    }
+    if (notificationGate && plan.bellUserIds.length) await emitProviderNotifications(io, routingKey, payload, plan.bellUserIds, notificationGate);
+    channel.ack(msg);
+    return;
+  }
+
   if (routingKey.startsWith('projects.')) {
     const changed = projectsChangedMessage(routingKey, payload);
     if (changed) io.to(`${ROOM_PREFIX}${changed.organizationId}`).emit('projects.changed', changed.message);

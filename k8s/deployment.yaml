@@ -63,6 +63,18 @@ spec:
             - name: TAX_SERVICE_URL
               value: "http://tax-service:3005"
             - name: DOCUMENT_SERVICE_URL
+            # Mensajería (chat-service, `comm.internal_chat`). Sin ella el gateway no registra /chat/* y el hub no entrega mensajes.
+            - name: CHAT_SERVICE_URL
+              value: "http://chat-service-node:3007"
+            # Comentarios, mejoras y puntos de fidelidad (feedback-service). Sin ella el gateway no registra /feedback/*.
+            - name: FEEDBACK_SERVICE_URL
+              value: "http://feedback-service-node:3022"
+            # El hub pide los mensajes a /internal/messages/:id de chat-service. Variable PROPIA (no INTERNAL_SERVICE_SECRET): ver env.ts.
+            - name: CHAT_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: internal-service-secret
+                  key: value
               value: "http://document-service:3003"
             - name: PLUGIN_CATALOG_SERVICE_URL
               value: "http://plugin-catalog-service:3011"

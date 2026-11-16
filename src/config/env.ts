@@ -31,6 +31,14 @@ const envSchema = z.object({
   TREASURY_SERVICE_URL: z.string().url().optional(),
   REPORTING_SERVICE_URL: z.string().url().optional(),
   PROJECTS_SERVICE_URL: z.string().url().optional(),
+  // Mensajería (chat-service). Sin ella no se registra /chat/* y el hub no entrega mensajes (no puede pedirlos).
+  CHAT_SERVICE_URL: z.string().url().optional(),
+  // Comentarios, mejoras y puntos de fidelidad (feedback-service). Sin ella no se registra /feedback/*.
+  FEEDBACK_SERVICE_URL: z.string().url().optional(),
+  // Secreto de las rutas `/internal/*` de chat-service (el hub pide ahí los mensajes: los eventos no llevan texto). Es el mismo
+  // Secret `internal-service-secret` del clúster, pero en su PROPIA variable: poner INTERNAL_SERVICE_SECRET encendería además la
+  // comprobación de tokens viejos (BUG #9), que hoy está apagada en producción. Decisión del dueño, 2026-11-14.
+  CHAT_INTERNAL_SECRET: z.string().optional(),
   // Colector OTLP/HTTP al que se reenvía la telemetría del navegador (`POST /telemetry/v1/traces`). Sin él, la ruta no existe.
   TELEMETRY_COLLECTOR_URL: z.string().url().optional(),
 

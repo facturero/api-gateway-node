@@ -63,6 +63,7 @@ spec:
             - name: TAX_SERVICE_URL
               value: "http://tax-service:3005"
             - name: DOCUMENT_SERVICE_URL
+              value: "http://document-service:3003"
             # Mensajería (chat-service, `comm.internal_chat`). Sin ella el gateway no registra /chat/* y el hub no entrega mensajes.
             - name: CHAT_SERVICE_URL
               value: "http://chat-service-node:3007"
@@ -75,7 +76,6 @@ spec:
                 secretKeyRef:
                   name: internal-service-secret
                   key: value
-              value: "http://document-service:3003"
             - name: PLUGIN_CATALOG_SERVICE_URL
               value: "http://plugin-catalog-service:3011"
             - name: NOTIFICATION_SERVICE_URL

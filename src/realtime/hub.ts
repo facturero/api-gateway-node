@@ -36,6 +36,10 @@ const USER_ROOM_PREFIX = 'user:';
 //        cuando lo que cambio es el tema predeterminado, o al `device:<deviceId>` de
 //        cada caja afectada cuando es un tema propio. El aviso NO lleva el config: la
 //        caja lo vuelve a pedir por REST con su ETag, y asi sale un 304 sin bytes.
+//      * organization.app_theme.# y organization.theme_settings.# -> `app_theme.changed` a la
+//        sala de la org: la empresa creó, editó o borró un tema de la aplicación, o cambió/fijó
+//        el suyo. Las sesiones abiertas vuelven a pedir sus temas por REST y se repintan sin
+//        recargar (si el administrador fija un tema, el resto lo ve al instante).
 //      * plugin.#                     -> `plugins.changed` a la org dueña del
 //        evento (activaciones/desactivaciones y ciclo de plugins a medida).
 //      * identity.#                   -> `permissions.changed` a `user:<uid>`
@@ -170,6 +174,8 @@ async function startRealtimeConsumer(
       await channel.bindQueue(queue, EXCHANGE, 'customer.#');
       await channel.bindQueue(queue, EXCHANGE, 'organization.billing_point.#');
       await channel.bindQueue(queue, EXCHANGE, 'organization.pos_theme.changed');
+      await channel.bindQueue(queue, EXCHANGE, 'organization.app_theme.#');
+      await channel.bindQueue(queue, EXCHANGE, 'organization.theme_settings.#');
       await channel.bindQueue(queue, EXCHANGE, 'plugin.#');
       await channel.bindQueue(queue, EXCHANGE, 'identity.#');
       await channel.bindQueue(queue, EXCHANGE, 'billing.invoice.#');
@@ -189,7 +195,7 @@ async function startRealtimeConsumer(
         });
       });
 
-      console.log('[realtime] consumidor crm.events activo (product.product.*, product.category.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required, projects.*, chat.*, feedback.*)');
+      console.log('[realtime] consumidor crm.events activo (product.product.*, product.category.*, customer.*, organization.billing_point.*, organization.pos_theme.changed, organization.app_theme.*, organization.theme_settings.*, plugin.*, identity.*, billing.invoice.*, fiscal.ec.invoice.attention_required, projects.*, chat.*, feedback.*)');
     } catch (err) {
       console.error('[realtime] no se pudo conectar a RabbitMQ, reintentando en 5s:', err);
       setTimeout(connectLoop, 5_000);
@@ -342,6 +348,18 @@ async function handleRealtimeMessage(
       } else {
         console.log(`[realtime] ${routingKey} sin deviceId: no hay terminal POS al que avisar`);
       }
+    }
+    channel.ack(msg);
+    return;
+  }
+
+  if (routingKey.startsWith('organization.app_theme.') || routingKey.startsWith('organization.theme_settings.')) {
+    // Temas de la aplicación web. El aviso no lleva colores: es un «algo cambió», cada sesión vuelve a pedir sus temas.
+    const orgId = payload.organizationId as string | undefined;
+    if (orgId) {
+      const room = `${ROOM_PREFIX}${orgId}`;
+      io.to(room).emit('app_theme.changed', { event: routingKey, organizationId: orgId });
+      console.log(`[realtime] ${routingKey} -> app_theme.changed a ${(await io.in(room).allSockets()).size} socket(s) de la org ${orgId}`);
     }
     channel.ack(msg);
     return;

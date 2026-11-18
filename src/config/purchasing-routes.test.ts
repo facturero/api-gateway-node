@@ -130,6 +130,37 @@ describe('corte por plugin de /purchasing/*', () => {
     expect(recibidas).toHaveLength(1);
   });
 
+  it('comprobantes recibidos del SRI: una regla por método y ruta, con plugin y permiso, y tope para el reporte y el XML', async () => {
+    const config = buildGatewayConfig();
+    const regla = (method: string, path: string) => config.routes.find((r) => r.method === method && r.path === path);
+    const esperadas: Array<[string, string, string, number?]> = [
+      ['GET', '/purchasing/received-documents', 'purchase_bill:read'],
+      ['GET', '/purchasing/received-documents/status', 'purchase_bill:read'],
+      ['POST', '/purchasing/received-documents/import', 'purchase_bill:create', 2.5 * 1024 * 1024],
+      ['GET', '/purchasing/received-documents/:id', 'purchase_bill:read'],
+      ['GET', '/purchasing/received-documents/:id/xml', 'purchase_bill:read'],
+      ['PUT', '/purchasing/received-documents/:id/xml', 'purchase_bill:create', 2.5 * 1024 * 1024],
+    ];
+    for (const [method, path, permission, maxBodyBytes] of esperadas) {
+      expect(regla(method, path), `${method} ${path}`).toMatchObject({
+        service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission, ...(maxBodyBytes ? { maxBodyBytes } : {}),
+      });
+    }
+    // Sin regla general: una ruta futura del servicio no llega por inercia.
+    expect(config.routes.some((r) => r.path === '/purchasing/received-documents/*')).toBe(false);
+
+    recibidas = [];
+    const app = gateway([ORDERS]);
+    expect((await app.request('http://gw/purchasing/received-documents/status', { headers: h }, env)).status).toBe(200);
+    expect((await app.request('http://gw/purchasing/received-documents/abc/xml', { method: 'PUT', headers: h, body: '<x/>' }, env)).status).toBe(200);
+    expect(recibidas).toEqual([
+      { method: 'GET', url: '/purchasing/received-documents/status', org: ORG },
+      { method: 'PUT', url: '/purchasing/received-documents/abc/xml', org: ORG },
+    ]);
+    // Sin el plugin de compras no pasa nada.
+    expect((await gateway([SUPPLIERS]).request('http://gw/purchasing/received-documents', { headers: h }, env)).status).toBe(403);
+  });
+
   it('recepción y cierre: rutas nuevas declaradas con plugin correcto y permisos', () => {
     const config = buildGatewayConfig();
     // listar/ver recepciones

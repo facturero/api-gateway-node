@@ -239,6 +239,22 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'POST', path: '/purchasing/bills/*/override', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:override' },
       { method: 'POST', path: '/purchasing/bills/*/void', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:void' },
 
+      // Comprobantes recibidos del SRI — mismo plugin purchasing.purchase_orders. Una regla por método y ruta, sin comodín al final.
+      // `status` e `import` van antes de `:id` (si no, «status» se leería como un id). El reporte mensual y un XML autorizado caben
+      // en 2 MB, pero el servicio acepta hasta ese tope y el gateway necesita uno mayor que el por defecto para no cortarlos antes.
+      { method: 'GET', path: '/purchasing/received-documents', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:read' },
+      { method: 'GET', path: '/purchasing/received-documents/status', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:read' },
+      { method: 'POST', path: '/purchasing/received-documents/import', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', maxBodyBytes: 2.5 * 1024 * 1024, permission: 'purchase_bill:create' },
+      { method: 'GET', path: '/purchasing/received-documents/:id', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:read' },
+      { method: 'GET', path: '/purchasing/received-documents/:id/xml', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', permission: 'purchase_bill:read' },
+      { method: 'PUT', path: '/purchasing/received-documents/:id/xml', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders', maxBodyBytes: 2.5 * 1024 * 1024, permission: 'purchase_bill:create' },
+
+      // Configuración portal SRI
+      { method: 'GET', path: '/purchasing/sri-portal/config', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders' },
+      { method: 'POST', path: '/purchasing/sri-portal/credentials', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders' },
+      { method: 'POST', path: '/purchasing/sri-portal/enable', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders' },
+      { method: 'POST', path: '/purchasing/sri-portal/disable', service: 'purchasing-service', stripPrefix: '', requiresPlugin: 'purchasing.purchase_orders' },
+
       // Tesorería / Cuentas por cobrar (Fase 3 bloque A). El servicio sirve sus rutas con el prefijo `/treasury`, por eso
       // `stripPrefix: ''`. UNA REGLA EXPLÍCITA POR MÉTODO Y RUTA, cada una con su plugin y su permiso, y SIN regla general al final:
       // lo que no está aquí responde 404 desde el gateway y nunca llega al servicio. Un `ANY /treasury/*` dejaría pasar con solo el
@@ -338,6 +354,14 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'GET', path: '/projects/workload', service: 'projects-service', stripPrefix: '', requiresPlugin: 'projects.resource_allocation', permission: 'project:read' },
       { method: 'ANY', path: '/projects/workload/*', service: 'projects-service', stripPrefix: '', requiresPlugin: 'projects.resource_allocation', permission: 'project:read', maxBodyBytes: 4 * 1024 },
       { method: 'ANY', path: '/projects/*', service: 'projects-service', stripPrefix: '', requiresPlugin: 'projects.tasks_kanban', permission: 'project:read', maxBodyBytes: 64 * 1024 },
+      // Mensajería al estilo Slack (`comm.internal_chat`, plugin del núcleo: gratis y siempre activo). Sin permiso a propósito: cualquier
+      // miembro de la organización usa el chat; quién lee qué (canales privados, DMs) lo decide chat-service, que responde 404 si no
+      // puede. `/internal/*` de chat-service NO pasa por aquí: lo llama el hub directo con X-Internal-Secret.
+      { method: 'ANY', path: '/chat/*', service: 'chat-service', stripPrefix: '', requiresPlugin: 'comm.internal_chat', maxBodyBytes: 64 * 1024 },
+
+      // Comentarios, mejoras y puntos de fidelidad (feedback-service). Sin módulo ni permiso: cualquiera con sesión manda los suyos; la
+      // bandeja de todas las empresas (`/feedback/admin/*`) la cuida el servicio con `feedback:manage`, de plataforma. Cubre `/feedback`.
+      { method: 'ANY', path: '/feedback/*', service: 'feedback-service', stripPrefix: '', maxBodyBytes: 64 * 1024 },
 
       { method: 'ANY', path: '/invoices/*', service: 'billing-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing' },
 
@@ -354,14 +378,6 @@ export function buildGatewayConfig(): GatewayConfig {
       // obtenía un enlace a cualquier archivo. La interfaz pide GET /files/:id/url
       // con su token; document-service acota a la organización.
       { method: 'ANY', path: '/files/*', service: 'document-service', stripPrefix: '' },
-      // Mensajería al estilo Slack (`comm.internal_chat`, plugin del núcleo: gratis y siempre activo). Sin permiso a propósito: cualquier
-      // miembro de la organización usa el chat; quién lee qué (canales privados, DMs) lo decide chat-service, que responde 404 si no
-      // puede. `/internal/*` de chat-service NO pasa por aquí: lo llama el hub directo con X-Internal-Secret.
-      { method: 'ANY', path: '/chat/*', service: 'chat-service', stripPrefix: '', requiresPlugin: 'comm.internal_chat', maxBodyBytes: 64 * 1024 },
-
-      // Comentarios, mejoras y puntos de fidelidad (feedback-service). Sin módulo ni permiso: cualquiera con sesión manda los suyos; la
-      // bandeja de todas las empresas (`/feedback/admin/*`) la cuida el servicio con `feedback:manage`, de plataforma. Cubre `/feedback`.
-      { method: 'ANY', path: '/feedback/*', service: 'feedback-service', stripPrefix: '', maxBodyBytes: 64 * 1024 },
 
       // MinIO/S3 object store — la URL presigned firmada usa el bucket en el path (path-style),
       // por lo que el URI debe llegar intacto a MinIO (sin stripPrefix).

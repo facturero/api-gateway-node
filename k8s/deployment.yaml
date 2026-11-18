@@ -54,16 +54,15 @@ spec:
             # Compras (`inventory.suppliers`, `purchasing.purchase_orders`). Sin esta variable el gateway no registra /purchasing/*.
             - name: PURCHASING_SERVICE_URL
               value: "http://purchasing-service-node:3017"
-            # Tesorería / Cuentas por cobrar (Fase 3). Sin esta variable el gateway no registra /treasury/*.
+            # Tesorería / Cuentas por cobrar y por pagar (Fase 3). Sin esta variable el gateway no registra /treasury/*.
             - name: TREASURY_SERVICE_URL
               value: "http://treasury-service-node:3018"
+            # Anexos SRI / Reporting (Fase anexos). Sin esta variable el gateway no registra /reporting/*: las rutas responden 404.
+            - name: REPORTING_SERVICE_URL
+              value: "http://reporting-service-node:3019"
             # Proyectos y tareas (`projects.tasks_kanban`). Sin esta variable el gateway no registra /projects/*: responde 500 SERVICE_NOT_FOUND.
             - name: PROJECTS_SERVICE_URL
               value: "http://projects-service-node:3020"
-            - name: TAX_SERVICE_URL
-              value: "http://tax-service:3005"
-            - name: DOCUMENT_SERVICE_URL
-              value: "http://document-service:3003"
             # Mensajería (chat-service, `comm.internal_chat`). Sin ella el gateway no registra /chat/* y el hub no entrega mensajes.
             - name: CHAT_SERVICE_URL
               value: "http://chat-service-node:3007"
@@ -76,6 +75,10 @@ spec:
                 secretKeyRef:
                   name: internal-service-secret
                   key: value
+            - name: TAX_SERVICE_URL
+              value: "http://tax-service:3005"
+            - name: DOCUMENT_SERVICE_URL
+              value: "http://document-service:3003"
             - name: PLUGIN_CATALOG_SERVICE_URL
               value: "http://plugin-catalog-service:3011"
             - name: NOTIFICATION_SERVICE_URL
@@ -104,8 +107,9 @@ spec:
                 secretKeyRef:
                   name: gateway-rabbitmq
                   key: url
+            # El sitio público de reservas (reservas-web) llama a /public/* desde el navegador del cliente final.
             - name: CORS_ORIGIN
-              value: "https://crm.noahsolution.com"
+              value: "https://crm.noahsolution.com,https://reservas.noahsolution.com"
             - name: TELEMETRY_COLLECTOR_URL
               value: "http://otel-collector.observability.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME

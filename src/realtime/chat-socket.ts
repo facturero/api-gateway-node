@@ -76,7 +76,7 @@ export interface ChatSocketOptions {
 const ORG_ROOM = (orgId: string) => `catalog:${orgId}`;
 const USER_ROOM = (userId: string) => `user:${userId}`;
 
-const typingSchema = z.object({ conversationId: z.string().uuid(), threadRootId: z.string().uuid().nullish() });
+const typingSchema = z.object({ conversationId: z.string().guid(), threadRootId: z.string().guid().nullish() });
 const presenceSchema = z.object({ userIds: z.array(z.string().max(64)).max(200) });
 const activitySchema = z.object({ state: z.enum(['active', 'away']) });
 

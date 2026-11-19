@@ -15,10 +15,13 @@ if (endpoint) {
       'deployment.environment': process.env.NODE_ENV ?? 'development',
     }),
     traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
-    metricReader: new PeriodicExportingMetricReader({
-      exporter: new OTLPMetricExporter({ url: `${endpoint}/v1/metrics` }),
-      exportIntervalMillis: 30_000,
-    }),
+    // SDK 0.30x: `metricReaders` es una lista (antes `metricReader`, uno solo).
+    metricReaders: [
+      new PeriodicExportingMetricReader({
+        exporter: new OTLPMetricExporter({ url: `${endpoint}/v1/metrics` }),
+        exportIntervalMillis: 30_000,
+      }),
+    ],
     // UndiciInstrumentation (instrumenta fetch()) queda fuera a proposito:
     // envuelve exactamente el fetch() de proxy.ts hacia los servicios
     // downstream, y bajo trafico proxy real y concurrente (no en llamadas

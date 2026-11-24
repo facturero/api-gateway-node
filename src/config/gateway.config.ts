@@ -339,6 +339,9 @@ export function buildGatewayConfig(): GatewayConfig {
       { method: 'GET', path: '/reporting/annexes/:annex/:period/manual-inputs', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:read' },
       { method: 'PUT', path: '/reporting/annexes/:annex/:period/manual-inputs/:fieldCode', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:generate', maxBodyBytes: 4 * 1024 },
       { method: 'GET', path: '/reporting/documents', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'compliance.sri_annexes', permission: 'tax_annex:read' },
+      // Resumen de ventas (lo usa el asistente para no sumar facturas). Es información de ventas, no del anexo: exige el módulo de
+      // facturación y `invoice:read`, no el del SRI.
+      { method: 'GET', path: '/reporting/sales/summary', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing', permission: 'invoice:read' },
 
       // Proyectos y tareas al estilo Asana (`projects.tasks_kanban`). UNA regla con comodín, a diferencia de tesorería o anexos: el
       // gateway exige el módulo y `project:read` (usar el módulo), y TODO lo demás lo decide el rol del usuario DENTRO de cada

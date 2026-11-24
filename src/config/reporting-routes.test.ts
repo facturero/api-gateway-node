@@ -80,6 +80,9 @@ const RUTAS: { method: string; path: string; patron: string; permiso: string; bo
   { method: 'GET', path: '/reporting/documents', patron: '/reporting/documents', permiso: 'tax_annex:read' },
 ];
 
+// El resumen de ventas vive en reporting-service pero NO es del anexo: otro módulo (facturación) y otro permiso.
+const VENTAS = { method: 'GET', path: '/reporting/sales/summary?from=2026-10-01&to=2026-10-31', patron: '/reporting/sales/summary' };
+
 const llamar = (app: ReturnType<typeof gateway>, r: { method: string; path: string; body?: string }, headers: Record<string, string> = h) =>
   app.request(`http://gw${r.path}`, { method: r.method, headers, body: r.body }, env);
 
@@ -87,7 +90,7 @@ describe('declaración de /reporting/* en el gateway', () => {
   it('registra el servicio y UNA regla por método y ruta, cada una con plugin y permiso', () => {
     const config = buildGatewayConfig();
     expect(config.services.some((s) => s.name === 'reporting-service')).toBe(true);
-    const reglas = config.routes.filter((r) => r.service === 'reporting-service');
+    const reglas = config.routes.filter((r) => r.service === 'reporting-service' && r.path !== VENTAS.patron);
     expect(reglas).toHaveLength(RUTAS.length);
     for (const r of reglas) {
       expect(r.requiresPlugin, r.path).toBe('compliance.sri_annexes');
@@ -216,5 +219,23 @@ describe('lo que NO está declarado no llega al servicio', () => {
     const res = await app.request('http://gw/reporting/annexes/f104/2026-10/manual-inputs/ajustes', { method: 'PUT', headers: { ...h, 'content-length': String(grande.length) }, body: grande }, env);
     expect(res.status).toBe(413);
     expect(recibidas).toEqual([]);
+  });
+});
+
+describe('resumen de ventas (/reporting/sales/summary)', () => {
+  it('exige el módulo de facturación y invoice:read, no el del SRI', () => {
+    const regla = buildGatewayConfig().routes.find((r) => r.path === VENTAS.patron);
+    expect(regla).toMatchObject({ method: 'GET', service: 'reporting-service', stripPrefix: '', requiresPlugin: 'finance.electronic_invoicing', permission: 'invoice:read' });
+  });
+
+  it('con facturación activa llega al servicio aunque no tenga el módulo del SRI; sin facturación, 403', async () => {
+    recibidas = [];
+    permisosToken = ['invoice:read'];
+    expect((await llamar(gateway([{ pluginCode: 'finance.electronic_invoicing', status: 'active' }]), VENTAS)).status).toBe(200);
+    expect(recibidas[0]?.url).toBe(VENTAS.path);
+    expect((await llamar(gateway([PLUGIN]), VENTAS)).status).toBe(403);
+    permisosToken = ['tax_annex:read'];
+    expect((await llamar(gateway([{ pluginCode: 'finance.electronic_invoicing', status: 'active' }]), VENTAS)).status).toBe(403);
+    permisosToken = ['*'];
   });
 });

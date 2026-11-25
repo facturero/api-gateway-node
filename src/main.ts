@@ -57,7 +57,7 @@ const io = createRealtimeHub({
 // socket no pasa por ese buffer, así que aquí se cuelga el assistant-service.
 // Como creamos el hub en main.ts y el módulo necesita el `io`, se registra tras
 // crear el hub en vez de dentro de él.
-registerAssistantSocket(io, { assistantServiceUrl: env.ASSISTANT_SERVICE_URL });
+registerAssistantSocket(io, { assistantServiceUrl: env.ASSISTANT_SERVICE_URL, authenticator: config.authenticator });
 registerChatSocket(io, { presence: chatPresence, members: chatMembers });
 
 httpServer.listen(env.PORT, () => {

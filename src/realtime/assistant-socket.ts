@@ -1,4 +1,5 @@
 import type { Server as SocketServer, Socket } from 'socket.io';
+import type { Authenticator } from '../core/types';
 
 /**
  * Canal del asistente sobre Socket.io.
@@ -25,6 +26,50 @@ import type { Server as SocketServer, Socket } from 'socket.io';
 export interface AssistantSocketOptions {
   /** URL del assistant-service (red interna del cluster). Si falta, no se registra el canal. */
   assistantServiceUrl?: string;
+  /**
+   * El mismo autenticador del hub. Con él se valida el token que el navegador manda en cada mensaje. Sin él (tests viejos)
+   * se usa el token del handshake tal cual, como antes.
+   */
+  authenticator?: Authenticator;
+}
+
+type AssistantAck = (res: { ok: boolean; data?: unknown; message?: string; code?: string }) => void;
+
+/**
+ * El token con el que el asistente llamará al API en nombre de la persona.
+ *
+ * **Por qué no basta el del handshake.** El hub guarda el token al conectar y el access token dura 15 minutos: pasado ese
+ * tiempo el socket sigue vivo, pero todo lo que el asistente hacía con ese token fallaba («exp claim timestamp check
+ * failed», visto en producción el 2026-11-25). `/auth/me` también, así que los permisos quedaban en null y se le ofrecían al
+ * modelo todas las herramientas. El navegador manda ahora su token vigente en cada mensaje; aquí se valida y se exige que
+ * sea de la misma persona y organización que el socket (si no, cualquiera con un token ajeno lo colaría en este socket).
+ */
+async function resolveToken(
+  socket: Socket,
+  payloadToken: unknown,
+  authenticator: Authenticator | undefined,
+): Promise<{ token: string } | { code: string; message: string }> {
+  const fromPayload = typeof payloadToken === 'string' && payloadToken ? payloadToken : null;
+  const token = fromPayload ?? (socket.data.bearerToken as string | undefined) ?? '';
+  if (!authenticator) return { token };
+
+  let result: Awaited<ReturnType<Authenticator['authenticate']>>;
+  try {
+    result = await authenticator.authenticate((name) => (name === 'authorization' ? `Bearer ${token}` : undefined));
+  } catch (error) {
+    console.error('[assistant-socket] no se pudo validar el token:', error);
+    return { code: 'AUTH_UNAVAILABLE', message: 'No se pudo comprobar tu sesión. Inténtalo de nuevo.' };
+  }
+  if (!result.authenticated) {
+    // El navegador renueva el token y reintenta al ver este código.
+    return { code: 'TOKEN_EXPIRED', message: 'Tu sesión caducó. Vuelve a intentarlo.' };
+  }
+  if (result.claims?.sub !== socket.data.subjectId || result.claims?.org_id !== socket.data.organizationId) {
+    return { code: 'TOKEN_MISMATCH', message: 'La sesión no coincide con esta conexión. Recarga la página.' };
+  }
+  // Los mensajes siguientes que lleguen sin token (clientes viejos) usarán este, que es más nuevo.
+  if (fromPayload) socket.data.bearerToken = fromPayload;
+  return { token };
 }
 
 /** Más generoso que el timeout del LLM (9 min en Ollama local): la ack del
@@ -35,28 +80,28 @@ export function registerAssistantSocket(io: SocketServer, options: AssistantSock
   if (!options.assistantServiceUrl) return;
 
   io.on('connection', (socket) => {
-    // Mandar un mensaje: arranca o continúa un hilo. Payload: { text, conversationId }.
-    socket.on('assistant:send', (payload: unknown, ack?: (res: { ok: boolean; data?: unknown; message?: string }) => void) => {
+    // Mandar un mensaje: arranca o continúa un hilo. Payload: { text, conversationId, token? }.
+    socket.on('assistant:send', (payload: unknown, ack?: AssistantAck) => {
       const text = typeof (payload as { text?: unknown })?.text === 'string' ? (payload as { text: string }).text : '';
       const conversationId =
         typeof (payload as { conversationId?: unknown })?.conversationId === 'string'
           ? (payload as { conversationId: string }).conversationId
           : null;
 
-      void callAssistant(socket, options.assistantServiceUrl!, {
+      void callAssistant(socket, options, (payload as { token?: unknown })?.token, {
         path: '/assistant/messages',
         body: { text, conversationId },
         ack,
       });
     });
 
-    // Confirmar o rechazar una escritura propuesta. Payload: { actionId, approve }.
-    socket.on('assistant:decide', (payload: unknown, ack?: (res: { ok: boolean; data?: unknown; message?: string }) => void) => {
-      const p = (payload ?? {}) as { actionId?: unknown; approve?: unknown };
+    // Confirmar o rechazar una escritura propuesta. Payload: { actionId, approve, token? }.
+    socket.on('assistant:decide', (payload: unknown, ack?: AssistantAck) => {
+      const p = (payload ?? {}) as { actionId?: unknown; approve?: unknown; token?: unknown };
       const actionId = typeof p.actionId === 'string' ? p.actionId : '';
       const approve = p.approve === true;
 
-      void callAssistant(socket, options.assistantServiceUrl!, {
+      void callAssistant(socket, options, p.token, {
         path: `/assistant/actions/${encodeURIComponent(actionId)}/decide`,
         body: { approve },
         ack,
@@ -67,14 +112,16 @@ export function registerAssistantSocket(io: SocketServer, options: AssistantSock
 
 async function callAssistant(
   socket: Socket,
-  serviceUrl: string,
+  options: AssistantSocketOptions,
+  payloadToken: unknown,
   params: {
     path: string;
     body: Record<string, unknown>;
-    ack?: (res: { ok: boolean; data?: unknown; message?: string }) => void;
+    ack?: AssistantAck;
   },
 ): Promise<void> {
-  const respond = (res: { ok: boolean; data?: unknown; message?: string }) => {
+  const serviceUrl = options.assistantServiceUrl!;
+  const respond = (res: { ok: boolean; data?: unknown; message?: string; code?: string }) => {
     // El cliente puede haberse desconectado mientras el turno corría: la ack
     // ya no tiene a quién llegar y emitir sobre un socket roto lanzaría.
     if (!socket.connected) {
@@ -91,6 +138,11 @@ async function callAssistant(
 // Mima el contrato del proxy HTTP: mismos headers de contexto y mismo Bearer
     // original. Sin ellos el assistant responde ORG_CONTEXT_REQUIRED/TOKEN_REQUIRED.
     // X-User-Id es el `sub` del JWT (lo que el hub guardó en subjectId).
+    const auth = await resolveToken(socket, payloadToken, options.authenticator);
+    if (!('token' in auth)) {
+      respond({ ok: false, code: auth.code, message: auth.message });
+      return;
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ACK_TIMEOUT_MS);
     try {
@@ -102,7 +154,7 @@ async function callAssistant(
           'X-User-Id': String(socket.data.subjectId ?? ''),
           'X-Organization-Id': String(socket.data.organizationId ?? ''),
         'Accept-Language': String(socket.data.locale ?? 'es').slice(0, 2),
-        Authorization: `Bearer ${socket.data.bearerToken ?? ''}`,
+        Authorization: `Bearer ${auth.token}`,
       },
       body: JSON.stringify(params.body),
       signal: controller.signal,
